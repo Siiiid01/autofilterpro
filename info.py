@@ -61,7 +61,7 @@ OWNER_UPI_ID = environ.get('OWNER_UPI_ID', 'Contact @QuirkyContact_Bot for payme
 
 #Auto approve 
 TEXT = environ.get("APPROVED_WELCOME_TEXT", "<b>{mention},\n\nʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ ᴛᴏ ᴊᴏɪɴ {title} ɪs ᴀᴘᴘʀᴏᴠᴇᴅ.\n\‣ ᴘᴏᴡᴇʀᴇᴅ ʙʏ @Quikry</b>")
-APPROVED = environ.get("APPROVED_WELCOME", "on").lower()
+APPROVED = environ.get("APPROVED_WELCOME", "off").lower()
 
 
 # ============================
