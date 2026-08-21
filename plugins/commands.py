@@ -372,6 +372,33 @@ async def start(client, message):
             )
         is_valid = await check_token(client, userid, token)
         if is_valid == True:
+            if verified_too_quickly(userid, token):
+                consume_verification_token(userid, token)
+                warning_number = await db.record_shortlink_bypass(userid)
+                if warning_number == 1:
+                    return await message.reply_text(
+                        text=(
+                            f"<b>⚠️ Shortener bypass detected.</b>\n\n"
+                            f"This is your first warning. Wait at least {VERIFY_MINIMUM_SECONDS} seconds "
+                            "after receiving a verification link, then request a new link."
+                        ),
+                        protect_content=False,
+                    )
+
+                await db.ban_user(
+                    int(userid),
+                    "Repeated shortener bypass",
+                    duration_hours=SHORTLINK_BYPASS_BAN_HOURS,
+                )
+                if int(userid) not in temp.BANNED_USERS:
+                    temp.BANNED_USERS.append(int(userid))
+                return await message.reply_text(
+                    text=(
+                        "<b>⛔ Shortener bypass detected again.</b>\n\n"
+                        f"You have been banned for {SHORTLINK_BYPASS_BAN_HOURS} hours."
+                    ),
+                    protect_content=False,
+                )
             btn = [[
                 InlineKeyboardButton("ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ɢᴇᴛ ғɪʟᴇ", url=f"https://telegram.me/{temp.U_NAME}?start=files_{fileid}")
             ]]

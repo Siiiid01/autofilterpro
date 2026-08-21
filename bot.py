@@ -31,6 +31,14 @@ logging.getLogger("aiohttp.web").setLevel(logging.ERROR)
 
 botStartTime = time.time()
 
+async def check_expired_temporary_bans():
+    while True:
+        expired_user_ids = await db.expire_temporary_bans()
+        for user_id in expired_user_ids:
+            if user_id in temp.BANNED_USERS:
+                temp.BANNED_USERS.remove(user_id)
+        await asyncio.sleep(30)
+
 async def Lucy_start():
     print('\n')
     print('\nInitalizing Lucy')
@@ -45,6 +53,7 @@ async def Lucy_start():
     b_users, b_chats = await db.get_banned()
     temp.BANNED_USERS = b_users
     temp.BANNED_CHATS = b_chats
+    asyncio.create_task(check_expired_temporary_bans())
     await Media.ensure_indexes()
     await Media2.ensure_indexes()
     stats = await clientDB.command('dbStats')

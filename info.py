@@ -95,6 +95,8 @@ VERIFY = bool(environ.get('VERIFY', True))  # Verification On (True) / Off (Fals
 VERIFY_EXPIRE = int(environ.get('VERIFY_EXPIRE', 6))  # Add time in hours
 VERIFIED_LOG = int(environ.get('VERIFIED_LOG', '-1002817571461'))  # Log channel id (make sure bot is admin)
 HOW_TO_VERIFY = environ.get('HOW_TO_VERIFY', 'https://t.me/Quikry')  # How to open tutorial link for verification
+VERIFY_MINIMUM_SECONDS = int(environ.get('VERIFY_MINIMUM_SECONDS', 50))
+SHORTLINK_BYPASS_BAN_HOURS = int(environ.get('SHORTLINK_BYPASS_BAN_HOURS', 6))
 
 # ============================
 # Link Shortener Configuration

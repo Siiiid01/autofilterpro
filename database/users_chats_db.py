@@ -3,7 +3,7 @@ from info import *
 import datetime
 import pytz  
 from pymongo.errors import DuplicateKeyError
-from pymongo import MongoClient
+from pymongo import MongoClient, ReturnDocument
 
 my_client = MongoClient(DATABASE_URI)
 mydb = my_client["filename"]
@@ -54,6 +54,10 @@ class Database:
                 is_banned=False,
                 ban_reason="",
             ),
+            shortlink_bypass=dict(
+                warnings=0,
+                last_detected_at=None,
+            ),
         )
 
     def new_group(self, id, title):
@@ -102,12 +106,15 @@ class Database:
         )
         await self.col.update_one({'id': id}, {'$set': {'ban_status': ban_status}})
     
-    async def ban_user(self, user_id, ban_reason="No Reason"):
+    async def ban_user(self, user_id, ban_reason="No Reason", duration_hours=None):
         ban_status = dict(
             is_banned=True,
             ban_reason=ban_reason
         )
+        if duration_hours is not None:
+            ban_status['banned_until'] = datetime.datetime.utcnow() + datetime.timedelta(hours=duration_hours)
         await self.col.update_one({'id': user_id}, {'$set': {'ban_status': ban_status}})
+        return ban_status
 
     async def get_ban_status(self, id):
         default = dict(
@@ -117,7 +124,39 @@ class Database:
         user = await self.col.find_one({'id':int(id)})
         if not user:
             return default
-        return user.get('ban_status', default)
+        ban_status = user.get('ban_status', default)
+        banned_until = ban_status.get('banned_until')
+        if ban_status.get('is_banned') and banned_until and banned_until <= datetime.datetime.utcnow():
+            await self.remove_ban(int(id))
+            return default
+        return ban_status
+
+    async def record_shortlink_bypass(self, user_id):
+        """Record a too-fast verification attempt and return its warning number."""
+        user = await self.col.find_one_and_update(
+            {'id': int(user_id)},
+            {
+                '$inc': {'shortlink_bypass.warnings': 1},
+                '$set': {'shortlink_bypass.last_detected_at': datetime.datetime.utcnow()},
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+        return user.get('shortlink_bypass', {}).get('warnings', 1) if user else 1
+
+    async def expire_temporary_bans(self):
+        """Remove expired shortlink-bypass bans and return the affected user IDs."""
+        now = datetime.datetime.utcnow()
+        query = {
+            'ban_status.is_banned': True,
+            'ban_status.banned_until': {'$exists': True, '$ne': None, '$lte': now},
+        }
+        expired_ids = [user['id'] async for user in self.col.find(query, {'id': 1})]
+        if expired_ids:
+            await self.col.update_many(
+                {'id': {'$in': expired_ids}},
+                {'$set': {'ban_status': {'is_banned': False, 'ban_reason': ''}}},
+            )
+        return expired_ids
 
     async def get_all_users(self):
         return self.col.find({})
@@ -129,6 +168,7 @@ class Database:
         await self.grp.delete_many({'id': int(id)})    
 
     async def get_banned(self):
+        await self.expire_temporary_bans()
         users = self.col.find({'ban_status.is_banned': True})
         chats = self.grp.find({'chat_status.is_disabled': True})
         b_chats = [chat['id'] async for chat in chats]

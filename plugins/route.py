@@ -5,6 +5,7 @@ import logging
 import secrets
 import time
 import mimetypes
+from urllib.parse import urlencode
 from aiohttp.http_exceptions import BadStatusLine
 from LucyBot.Bot import multi_clients, work_loads, Codeflix
 from LucyBot.server.exceptions import FIleNotFound, InvalidHash
@@ -13,6 +14,7 @@ from LucyBot.util.custom_dl import ByteStreamer
 from LucyBot.util.time_format import get_readable_time
 from LucyBot.util.render_template import render_page
 from info import *
+from utils import temp
 
 
 routes = web.RouteTableDef()
@@ -20,6 +22,16 @@ routes = web.RouteTableDef()
 @routes.get("/", allow_head=True)
 async def root_route_handler(request):
     return web.json_response("Lucy_Bot")
+
+
+@routes.get(r"/verify/{user_id:\d+}/{token:[A-Za-z0-9]+}/{file_id:.+}", allow_head=True)
+async def verify_redirect_handler(request: web.Request):
+    """Keep the Telegram verification deep link behind the configured FQDN."""
+    user_id = request.match_info['user_id']
+    token = request.match_info['token']
+    file_id = request.match_info['file_id']
+    start_payload = f"verify-{user_id}-{token}-{file_id}"
+    raise web.HTTPFound(f"https://t.me/{temp.U_NAME}?{urlencode({'start': start_payload})}")
 
 
 @routes.get(r"/watch/{path:\S+}", allow_head=True)

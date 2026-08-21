@@ -14,6 +14,7 @@ import re
 import os
 from datetime import datetime, date, time, timedelta
 import string
+from urllib.parse import quote
 from typing import List
 from database.users_chats_db import db
 from bs4 import BeautifulSoup
@@ -56,6 +57,7 @@ class temp(object):
     SETTINGS = {}
     IMDB_CAP = {}
     VERIFY = {}
+    VERIFY_LINK_ISSUED_AT = {}
 
 
 async def is_req_subscribed(bot, query):
@@ -641,9 +643,26 @@ async def get_token(bot, userid, link, fileid):
         await bot.send_message(LOG_CHANNEL, script.LOG_TEXT_P.format(user.id, user.mention))
     token = ''.join(random.choices(string.ascii_letters + string.digits, k=7))
     TOKENS[user.id] = {token: False}
-    link = f"{link}verify-{user.id}-{token}-{fileid}"
-    shortened_verify_url = await get_verify_shorted_link(link)
+    temp.VERIFY_LINK_ISSUED_AT[user.id] = {token: datetime.now(pytz.UTC)}
+    # The shortener only receives this Koyeb/FQDN URL.  The web route redirects
+    # to Telegram after the visitor reaches our domain.
+    verify_url = f"{URL.rstrip('/')}/verify/{user.id}/{token}/{quote(str(fileid), safe='')}"
+    shortened_verify_url = await get_verify_shorted_link(verify_url)
     return str(shortened_verify_url)
+
+def verified_too_quickly(userid, token):
+    """Return True when a verification link is used before its required wait time."""
+    issued_at = temp.VERIFY_LINK_ISSUED_AT.get(int(userid), {}).get(token)
+    if not issued_at:
+        return False
+    elapsed = (datetime.now(pytz.UTC) - issued_at).total_seconds()
+    return elapsed < VERIFY_MINIMUM_SECONDS
+
+def consume_verification_token(userid, token):
+    """Prevent a rejected verification link from being reused."""
+    if int(userid) in TOKENS and token in TOKENS[int(userid)]:
+        TOKENS[int(userid)][token] = True
+    temp.VERIFY_LINK_ISSUED_AT.get(int(userid), {}).pop(token, None)
 
 async def get_verify_status(userid):
     status = temp.VERIFY.get(userid)
