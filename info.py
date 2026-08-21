@@ -18,7 +18,7 @@ def is_enabled(value, default):
 # ============================
 # Bot Information Configuration
 # ============================
-SESSION = environ.get('SESSION', 'TechVJBot')
+SESSION = environ.get('SESSION', 'quirky2')
 API_ID = int(environ.get('API_ID', ''))
 API_HASH = environ.get('API_HASH', '')
 BOT_TOKEN = environ.get('BOT_TOKEN', "")
@@ -33,35 +33,34 @@ PICS = (environ.get('PICS', 'https://i.ibb.co/wNcsWpYB/0abea8b13af0f2d75151920ae
 NOR_IMG = random.choice(PICS)
 MELCOW_VID = environ.get("MELCOW_VID", "https://i.ibb.co/hJn20Bjq/anime-welcome.gif")
 SPELL_IMG = environ.get("SPELL_IMG", "CAACAgUAAxkBAAENwWdnqY1AZaRBdPwAAccQMHRwep1PenQAAuQSAAIssohXHigAATpnIXAJNgQ")
-SUBSCRIPTION = (environ.get('SUBSCRIPTION', 'https://i.ibb.co/vCNJQXy/IMG-20241230-124316-985.jpg'))
+SUBSCRIPTION = (environ.get('SUBSCRIPTION', 'https://i.ibb.co/wNcsWpYB/0abea8b13af0f2d75151920ae7ffaf7f.jpg'))
 FSUB_PICS = (environ.get('FSUB_PICS', 'https://i.ibb.co/35YXNj90/791117c8699dbe3ec06a5b05181140ba.jpg https://i.ibb.co/ZRCNWBYG/4051986ff3e8189ad0b632a5afa4ef55.jpg https://i.ibb.co/VctbyT45/a71cda7519b6bef1a12da8aadc58a226.jpg https://i.ibb.co/Q7Jy0Xt9/a4851b8177e7543e14f50014308bbc6d.jpg https://i.ibb.co/RRQ12vP/b1cfdaaeb073b478b6b55a3082c6e39f.jpg https://i.ibb.co/cKgWD7K5/b8695471815592db698416feb2bea3b8.jpg https://i.ibb.co/4nXjyzNK/bb904bb66452e4cec045da5483a8ded9.jpg https://i.ibb.co/TMRB0Rvr/cacecd9472deaf6950a33bb2abec9658.jpg https://i.ibb.co/sJqXhk69/cb6a673c58e205907a31c86fdd0cf258.jpg https://i.ibb.co/tMtF2bVV/de14c54e3fe99a3f576bd9396517962e.jpg https://i.ibb.co/SDzP8V7t/e414da7e55508a6e6674060b0db53c4f.jpg https://i.ibb.co/4gsQC7WD/e3130de1bd5d7cb390db553b80085c31.jpg https://i.ibb.co/5gQzK63P/ec1780d148293d41ba0785281200decd.jpg https://i.ibb.co/ccWQ3p79/ef8f1b0850464b31162382955ee93c18.jpg https://i.ibb.co/kg0XW9pJ/f1476eccd899f6db25f6696f599a4ca3.jpg')).split()  # Fsub pic
 
 # ============================
 # Admin, Channels & Users Configuration
 # ============================
 ADMINS = [int(admin) if id_pattern.search(admin) else admin for admin in environ.get('ADMINS', '2090517919').split()] # Replace with the actual admin ID(s) to add
-CHANNELS = [int(ch) if id_pattern.search(ch) else ch for ch in environ.get('CHANNELS', '-1002249464432 -1002125588996 -1002008657265 -1002174163101').split()]  # Channel id for auto indexing (make sure bot is admin)
-LOG_CHANNEL = int(environ.get('LOG_CHANNEL', '-1002121937308'))  # Log channel id (make sure bot is admin)
-BIN_CHANNEL = int(environ.get('BIN_CHANNEL', '-1002121937308'))  # Bin channel id (make sure bot is admin)
-MOVIE_UPDATE_CHANNEL = int(environ.get('MOVIE_UPDATE_CHANNEL', '-1002121937308'))  # Notification of those who verify will be sent to your channel
-PREMIUM_LOGS = int(environ.get('PREMIUM_LOGS', '-1002121937308'))  # Premium logs channel id
-auth_channel = environ.get('AUTH_CHANNEL', '-1002900102086')  # Channel/Group ID for force sub (make sure bot is admin)
-DELETE_CHANNELS = [int(dch) if id_pattern.search(dch) else dch for dch in environ.get('DELETE_CHANNELS', '').split()]
-support_chat_id = environ.get('SUPPORT_CHAT_ID', '-1002264260689')  # Support group id (make sure bot is admin)
-reqst_channel = environ.get('REQST_CHANNEL_ID', '-1001637425340')  # Request channel id (make sure bot is admin)
-AUTH_CHANNEL = [int(fch) if id_pattern.search(fch) else fch for fch in environ.get('AUTH_CHANNEL', '-1002900102086').split()]
-MULTI_FSUB = [int(channel_id) for channel_id in environ.get('MULTI_FSUB', '-1001637425340  -1002231820245 -1002226951292 -1001938208245').split() if re.match(r'^-?\d+$', channel_id)]  # Channel for force sub (make sure bot is admin)
+CHANNELS = [int(ch) if id_pattern.search(ch) else ch for ch in environ.get('CHANNELS', '-1002008657265 -1002174163101').split()]  # Channel id for auto indexing (make sure bot is admin)
+LOG_CHANNEL = int(environ.get('LOG_CHANNEL', '-1002817571461'))  # Log channel id (make sure bot is admin)
+BIN_CHANNEL = int(environ.get('BIN_CHANNEL', '-1002817571461'))  # Bin channel id (make sure bot is admin)
+MOVIE_UPDATE_CHANNEL = int(environ.get('MOVIE_UPDATE_CHANNEL', '-1002808090152'))  # Notification of those who verify will be sent to your channel
+PREMIUM_LOGS = int(environ.get('PREMIUM_LOGS', '-1002817571461'))  # Premium logs channel id
+auth_channel = environ.get('AUTH_CHANNEL', '-1002817571461 -1002817571461 -1002817571461 -1003712608837')  # Channel/Group ID for force sub (make sure bot is admin)
+DELETE_CHANNELS = [int(dch) if id_pattern.search(dch) else dch for dch in environ.get('DELETE_CHANNELS', '-1002817571461').split()]
+support_chat_id = environ.get('SUPPORT_CHAT_ID', '-1002808090152')  # Support group id (make sure bot is admin)
+reqst_channel = environ.get('REQST_CHANNEL_ID', '-1002264260689')  # Request channel id (make sure bot is admin)
+AUTH_CHANNEL = [int(fch) if id_pattern.search(fch) else fch for fch in environ.get('AUTH_CHANNEL', '').split()]
+MULTI_FSUB = [int(channel_id) for channel_id in environ.get('MULTI_FSUB', '-1002817571461 -1002817571461 -1002817571461 -1003712608837').split() if re.match(r'^-?\d+$', channel_id)]  # Channel for force sub (make sure bot is admin)
 
 
 # ============================
 # Payment Configuration
 # ============================
 QR_CODE = environ.get('QR_CODE', 'https://i.ibb.co/XxbHQ9Gk/9a45465f2734f8605fed7f4af74327d7.jpg')
-OWNER_UPI_ID = environ.get('OWNER_UPI_ID', 'Contact @Anime106_Request_bot')
+OWNER_UPI_ID = environ.get('OWNER_UPI_ID', 'Contact @QuirkyContact_Bot for payment')
 
 #Auto approve 
-CHAT_ID = [int(app_chat_id) if id_pattern.search(app_chat_id) else app_chat_id for app_chat_id in environ.get('CHAT_ID', '-1002226951292').split()]
-TEXT = environ.get("APPROVED_WELCOME_TEXT", "<b>{mention},\n\nʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ ᴛᴏ ᴊᴏɪɴ {title} ɪs ᴀᴘᴘʀᴏᴠᴇᴅ.\n\‣ ᴘᴏᴡᴇʀᴇᴅ ʙʏ @WilsonVerse</b>")
+TEXT = environ.get("APPROVED_WELCOME_TEXT", "<b>{mention},\n\nʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ ᴛᴏ ᴊᴏɪɴ {title} ɪs ᴀᴘᴘʀᴏᴠᴇᴅ.\n\‣ ᴘᴏᴡᴇʀᴇᴅ ʙʏ @Quikry</b>")
 APPROVED = environ.get("APPROVED_WELCOME", "on").lower()
 
 
@@ -70,8 +69,8 @@ APPROVED = environ.get("APPROVED_WELCOME", "on").lower()
 # ============================
 DATABASE_URI = environ.get('DATABASE_URI', "")
 DATABASE_URI2 = environ.get('DATABASE_URI2', "")
-DATABASE_NAME = environ.get('DATABASE_NAME', "TechVJBot")
-COLLECTION_NAME = environ.get('COLLECTION_NAME', 'TechVJBot')
+DATABASE_NAME = environ.get('DATABASE_NAME', "")
+COLLECTION_NAME = environ.get('COLLECTION_NAME', 'quirky2')
 
 # ============================
 # Movie Notification & Update Settings
@@ -84,26 +83,26 @@ CAPTION_LANGUAGES = ["Bhojpuri", "Hindi", "Bengali", "Tamil", "English", "Bangla
 # Verification Settings
 # ============================
 VERIFY = bool(environ.get('VERIFY', True))  # Verification On (True) / Off (False)
-VERIFY_EXPIRE = int(environ.get('VERIFY_EXPIRE', 12))  # Add time in hours
-VERIFIED_LOG = int(environ.get('VERIFIED_LOG', '-1001637425340'))  # Log channel id (make sure bot is admin)
-HOW_TO_VERIFY = environ.get('HOW_TO_VERIFY', 'https://t.me/WilsonVerse/4')  # How to open tutorial link for verification
+VERIFY_EXPIRE = int(environ.get('VERIFY_EXPIRE', 6))  # Add time in hours
+VERIFIED_LOG = int(environ.get('VERIFIED_LOG', '-1002817571461'))  # Log channel id (make sure bot is admin)
+HOW_TO_VERIFY = environ.get('HOW_TO_VERIFY', 'https://t.me/Quikry')  # How to open tutorial link for verification
 
 # ============================
 # Link Shortener Configuration
 # ============================
-IS_SHORTLINK = bool(environ.get('IS_SHORTLINK', False))
+IS_SHORTLINK = bool(environ.get('IS_SHORTLINK', True))
 SHORTLINK_URL = environ.get('SHORTLINK_URL', 'inshorturl.com')
 SHORTLINK_API = environ.get('SHORTLINK_API', '')
-TUTORIAL = environ.get('TUTORIAL', 'https://t.me/WilsonVerse/4')  # Tutorial video link for opening shortlink website
+TUTORIAL = environ.get('TUTORIAL', 'https://t.me/Quikry')  # Tutorial video link for opening shortlink website
 IS_TUTORIAL = bool(environ.get('IS_TUTORIAL', False))
 
 # ============================
 # Channel & Group Links Configuration
 # ============================
-GRP_LNK = environ.get('GRP_LNK', 'https://t.me/+kj3GsiQX8rxhMTQ1')
-CHNL_LNK = environ.get('CHNL_LNK', 'https://t.me/WilsonVerse')
-OWNER_LNK = environ.get('OWNER_LNK', 'https://t.me/Anime106_Request_bot')
-MOVIE_UPDATE_CHANNEL_LNK = environ.get('MOVIE_UPDATE_CHANNEL_LNK', 'https://t.me/WilsonVerse')
+GRP_LNK = environ.get('GRP_LNK', 'https://t.me/+ejFgz8UdWlcxNWE1')
+CHNL_LNK = environ.get('CHNL_LNK', 'https://t.me/Quikry')
+OWNER_LNK = environ.get('OWNER_LNK', 'https://t.me/QuirkyContact_Bot')
+MOVIE_UPDATE_CHANNEL_LNK = environ.get('MOVIE_UPDATE_CHANNEL_LNK', '')
 OWNERID = int(os.environ.get('OWNERID', '2090517919'))  # Replace with the actual admin ID
 
 # ============================
@@ -121,7 +120,7 @@ MAX_B_TN = environ.get("MAX_B_TN", "5")
 MAX_BTN = is_enabled((environ.get('MAX_BTN', "True")), True)
 PORT = environ.get("PORT", "8080")
 MSG_ALRT = environ.get('MSG_ALRT', 'sʜᴀʀᴇ ᴀɴᴅ sᴜᴘᴘᴏʀᴛ ᴜs')
-SUPPORT_CHAT = environ.get('SUPPORT_CHAT', 'https://t.me/+orrQTtRXjAgzNzQ1')  # Support group link (make sure bot is admin)
+SUPPORT_CHAT = environ.get('SUPPORT_CHAT', 'https://t.me/+ejFgz8UdWlcxNWE1')  # Support group link (make sure bot is admin)
 P_TTI_SHOW_OFF = is_enabled((environ.get('P_TTI_SHOW_OFF', "False")), False)
 IMDB = is_enabled((environ.get('IMDB', "False")), False)
 AUTO_FFILTER = is_enabled((environ.get('AUTO_FFILTER', "True")), True)
@@ -172,7 +171,7 @@ FQDN = str(getenv('FQDN', BIND_ADRESS)) if not ON_HEROKU or getenv('FQDN') else 
 URL = "https://{}/".format(FQDN) if ON_HEROKU or NO_PORT else "https://{}/".format(FQDN, PORT)
 SLEEP_THRESHOLD = int(environ.get('SLEEP_THRESHOLD', '60'))
 WORKERS = int(environ.get('WORKERS', '4'))
-SESSION_NAME = str(environ.get('SESSION_NAME', 'TechVJBot'))
+SESSION_NAME = str(environ.get('SESSION_NAME', ''))
 MULTI_CLIENT = False
 name = str(environ.get('name', 'Quirky'))
 PING_INTERVAL = int(environ.get("PING_INTERVAL", "1200"))  # 20 minutes
@@ -190,7 +189,7 @@ else:
 # ============================
 # Reactions Configuration
 # ============================
-REACTIONS = ["😇", "🤗", "😍", "👍", "🎅", "😐", "🥰", "🤩", "😱", "🤣", "😘", "👏", "😛", "😈", "🎉", "🫡", "🤓", "😎", "🏆", "🔥", "🤭", "🌚", "🆒", "👻", "😁"]
+REACTIONS = ["😇", "🤗", "😍", "👍", "🎅", "😐", "🥰", "🤩", "😱", "🤣", "😘", "👏", "😛", "😈", "🎉", "🫡", "🤓", "😎", "🏆", "🔥", "🤭", "🌚", "🆒", "👻", "😁", "⭐"]
 
 
 
