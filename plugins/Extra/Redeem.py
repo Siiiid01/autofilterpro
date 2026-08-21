@@ -1,4 +1,5 @@
 import pymongo
+import logging
 from datetime import timedelta, datetime
 import pytz
 import string
@@ -8,6 +9,8 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from info import DATABASE_URI, DATABASE_NAME, ADMINS, PREMIUM_LOGS
 from utils import get_seconds, temp
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 PREMIUM_IMAGE = "https://i.ibb.co/BVLLb42X/Black-and-White-Simple-Minimalist-Special-Gift-Voucher-Certificate.jpg"
 
@@ -535,14 +538,7 @@ async def confirm_revoke_all(client, callback_query):
     except Exception as e:
         await log_error(client, "Confirm Revoke Error", str(e), callback_query.from_user)
 
-async def check_premium_notifications():
-    try:
-        # Get bot instance
-        bot = Client.get_current()
-    except Exception as e:
-        print(f"Failed to get bot instance: {e}")
-        return
-
+async def check_premium_notifications(bot):
     while True:
         try:
             now = datetime.now(pytz.utc)
@@ -552,9 +548,9 @@ async def check_premium_notifications():
                 "sent": False
             })
 
-            async for notification in pending:
+            for notification in pending:
+                user_id = notification.get("user_id")
                 try:
-                    user_id = notification["user_id"]
                     notification_type = notification["type"]
                     
                     text = ("⚠️ Your premium access will expire in 2 hours!" 
@@ -568,21 +564,29 @@ async def check_premium_notifications():
                     )
                     
                     # Mark as sent
-                    await db.col_notifications.update_one(
+                    db.col_notifications.update_one(
                         {"_id": notification["_id"]},
                         {"$set": {"sent": True}}
                     )
                 except Exception as e:
-                    print(f"Failed to send notification to {user_id}: {e}")
+                    logger.exception("Failed to send premium notification to user %s", user_id)
                     continue
 
         except Exception as e:
-            print(f"Notification checker error: {e}")
+            logger.exception("Premium notification checker error")
         
         await asyncio.sleep(60)  # Check every minute
 
-# Start notification checker
-asyncio.create_task(check_premium_notifications())
+_notification_task = None
+
+
+def start_premium_notification_checker(bot):
+    """Start one notifier after the Pyrogram client has initialized."""
+    global _notification_task
+
+    if _notification_task is None or _notification_task.done():
+        _notification_task = asyncio.create_task(check_premium_notifications(bot))
+    return _notification_task
 
 async def log_error(client, error_type: str, details: str, user=None):
     try:

@@ -54,6 +54,10 @@
             "description": "ID of channel.Make sure bot is admin in this channel. Without subscribing this channel users cannot use bot.",
             "required": false
         },
+        "AUTO_APPROVE_CHAT_ID": {
+            "description": "Optional group/channel ID(s), separated by spaces, whose join requests should be auto-approved. Leave empty to handle every chat where the bot is an admin.",
+            "required": false
+        },
         "DATABASE_URI": {
             "description": "mongoDB URI. Get this value from https://www.mongodb.com.",
             "required": true

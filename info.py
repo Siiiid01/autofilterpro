@@ -5,7 +5,7 @@ from Script import script
 import random
 
 # Utility functions
-id_pattern = re.compile(r'^.\d+$')
+id_pattern = re.compile(r'^-?\d+$')
 
 def is_enabled(value, default):
     if value.lower() in ["true", "yes", "1", "enable", "y"]:
@@ -45,11 +45,10 @@ LOG_CHANNEL = int(environ.get('LOG_CHANNEL', '-1002817571461'))  # Log channel i
 BIN_CHANNEL = int(environ.get('BIN_CHANNEL', '-1002817571461'))  # Bin channel id (make sure bot is admin)
 MOVIE_UPDATE_CHANNEL = int(environ.get('MOVIE_UPDATE_CHANNEL', '-1002808090152'))  # Notification of those who verify will be sent to your channel
 PREMIUM_LOGS = int(environ.get('PREMIUM_LOGS', '-1002817571461'))  # Premium logs channel id
-auth_channel = environ.get('AUTH_CHANNEL', '-1002817571461 -1002817571461 -1002817571461 -1003712608837')  # Channel/Group ID for force sub (make sure bot is admin)
+auth_channel = environ.get('AUTH_CHANNEL', '').strip()  # Single force-sub channel/group ID
 DELETE_CHANNELS = [int(dch) if id_pattern.search(dch) else dch for dch in environ.get('DELETE_CHANNELS', '-1002817571461').split()]
 support_chat_id = environ.get('SUPPORT_CHAT_ID', '-1002808090152')  # Support group id (make sure bot is admin)
 reqst_channel = environ.get('REQST_CHANNEL_ID', '-1002264260689')  # Request channel id (make sure bot is admin)
-AUTH_CHANNEL = [int(fch) if id_pattern.search(fch) else fch for fch in environ.get('AUTH_CHANNEL', '').split()]
 MULTI_FSUB = [int(channel_id) for channel_id in environ.get('MULTI_FSUB', '-1002817571461 -1002817571461 -1002817571461 -1003712608837').split() if re.match(r'^-?\d+$', channel_id)]  # Channel for force sub (make sure bot is admin)
 
 
@@ -62,6 +61,16 @@ OWNER_UPI_ID = environ.get('OWNER_UPI_ID', 'Contact @QuirkyContact_Bot for payme
 #Auto approve 
 TEXT = environ.get("APPROVED_WELCOME_TEXT", "<b>{mention},\n\nʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ ᴛᴏ ᴊᴏɪɴ {title} ɪs ᴀᴘᴘʀᴏᴠᴇᴅ.\n\‣ ᴘᴏᴡᴇʀᴇᴅ ʙʏ @Quikry</b>")
 APPROVED = environ.get("APPROVED_WELCOME", "off").lower()
+
+# Leave this empty to approve requests in every group/channel where the bot is
+# an administrator. CHAT_ID is retained as a backwards-compatible alias.
+_auto_approve_chat_id = environ.get(
+    "AUTO_APPROVE_CHAT_ID", environ.get("CHAT_ID", "")
+).strip()
+AUTO_APPROVE_CHAT_IDS = [
+    int(chat_id) if id_pattern.fullmatch(chat_id) else chat_id
+    for chat_id in _auto_approve_chat_id.split()
+]
 
 
 # ============================
@@ -145,7 +154,7 @@ EMOJI_MODE = bool(environ.get('EMOJI_MODE', True))  # Emoji status On (True) / O
 # Bot Configuration
 # ============================
 auth_grp = environ.get('AUTH_GROUP')
-AUTH_CHANNEL = int(auth_channel) if auth_channel and id_pattern.search(auth_channel) else None
+AUTH_CHANNEL = int(auth_channel) if id_pattern.fullmatch(auth_channel) else None
 AUTH_GROUPS = [int(ch) for ch in auth_grp.split()] if auth_grp else None
 REQST_CHANNEL = int(reqst_channel) if reqst_channel and id_pattern.search(reqst_channel) else None
 SUPPORT_CHAT_ID = int(support_chat_id) if support_chat_id and id_pattern.search(support_chat_id) else None
