@@ -60,7 +60,7 @@ OWNER_UPI_ID = environ.get('OWNER_UPI_ID', 'Contact @QuirkyContact_Bot for payme
 
 #Auto approve 
 TEXT = environ.get("APPROVED_WELCOME_TEXT", "<b>{mention},\n\nʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ ᴛᴏ ᴊᴏɪɴ {title} ɪs ᴀᴘᴘʀᴏᴠᴇᴅ.\n\‣ ᴘᴏᴡᴇʀᴇᴅ ʙʏ @Quikry</b>")
-APPROVED = environ.get("APPROVED_WELCOME", "off").lower()
+APPROVED = environ.get("APPROVED_WELCOME", "on").lower()
 
 # Leave this empty to approve requests in every group/channel where the bot is
 # an administrator. CHAT_ID is retained as a backwards-compatible alias.
