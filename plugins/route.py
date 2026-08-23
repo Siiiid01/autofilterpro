@@ -24,13 +24,14 @@ async def root_route_handler(request):
     return web.json_response("Lucy_Bot")
 
 
-@routes.get(r"/verify/{user_id:\d+}/{token:[A-Za-z0-9]+}/{file_id:.+}", allow_head=True)
+@routes.get(r"/v/{token:[A-Za-z0-9]+}", allow_head=True)
 async def verify_redirect_handler(request: web.Request):
-    """Keep the Telegram verification deep link behind the configured FQDN."""
-    user_id = request.match_info['user_id']
+    """Resolve an opaque FQDN verification URL into a Telegram deep link."""
     token = request.match_info['token']
-    file_id = request.match_info['file_id']
-    start_payload = f"verify-{user_id}-{token}-{file_id}"
+    verify_link = temp.VERIFY_LINKS.get(token)
+    if not verify_link:
+        raise web.HTTPNotFound(text="This verification link is invalid or expired.")
+    start_payload = f"verify-{verify_link['user_id']}-{token}-{verify_link['file_id']}"
     raise web.HTTPFound(f"https://t.me/{temp.U_NAME}?{urlencode({'start': start_payload})}")
 
 

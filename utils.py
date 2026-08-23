@@ -14,7 +14,6 @@ import re
 import os
 from datetime import datetime, date, time, timedelta
 import string
-from urllib.parse import quote
 from typing import List
 from database.users_chats_db import db
 from bs4 import BeautifulSoup
@@ -57,7 +56,7 @@ class temp(object):
     SETTINGS = {}
     IMDB_CAP = {}
     VERIFY = {}
-    VERIFY_LINK_ISSUED_AT = {}
+    VERIFY_LINKS = {}
 
 
 async def is_req_subscribed(bot, query):
@@ -596,11 +595,11 @@ async def get_verify_shorted_link(link):
                         return data["shortlink"]
                     else:
                         logger.error(f"Error: {data['message']}")
-                        return f'https://{URL}/shortLink?token={API}&format=json&link={link}'
+                        return link
 
         except Exception as e:
             logger.error(e)
-            return f'https://{URL}/shortLink?token={API}&format=json&link={link}'
+            return link
     else:
         url = f'https://{URL}/api'
         params = {'api': API,
@@ -614,11 +613,11 @@ async def get_verify_shorted_link(link):
                         return data['shortenedUrl']
                     else:
                         logger.error(f"Error: {data['message']}")
-                        return f'https://{URL}/api?api={API}&link={link}'
+                        return link
 
         except Exception as e:
             logger.error(e)
-            return f'{URL}/api?api={API}&link={link}'
+            return link
 
 async def check_token(bot, userid, token):
     user = await bot.get_users(userid)
@@ -636,33 +635,40 @@ async def check_token(bot, userid, token):
     else:
         return False
 
-async def get_token(bot, userid, link, fileid):
+async def get_token(bot, userid, _link, fileid):
     user = await bot.get_users(userid)
     if not await db.is_user_exist(user.id):
         await db.add_user(user.id, user.first_name)
         await bot.send_message(LOG_CHANNEL, script.LOG_TEXT_P.format(user.id, user.mention))
-    token = ''.join(random.choices(string.ascii_letters + string.digits, k=7))
+    for old_token in TOKENS.get(user.id, {}):
+        temp.VERIFY_LINKS.pop(old_token, None)
+
+    token = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
     TOKENS[user.id] = {token: False}
-    temp.VERIFY_LINK_ISSUED_AT[user.id] = {token: datetime.now(pytz.UTC)}
-    # The shortener only receives this Koyeb/FQDN URL.  The web route redirects
-    # to Telegram after the visitor reaches our domain.
-    verify_url = f"{URL.rstrip('/')}/verify/{user.id}/{token}/{quote(str(fileid), safe='')}"
+    temp.VERIFY_LINKS[token] = {
+        'user_id': user.id,
+        'file_id': str(fileid),
+        'issued_at': datetime.now(pytz.UTC),
+    }
+    # The shortener only receives this opaque Koyeb/FQDN URL.  It contains no
+    # API key, Telegram user ID, or file ID.
+    verify_url = f"{URL.rstrip('/')}/v/{token}"
     shortened_verify_url = await get_verify_shorted_link(verify_url)
     return str(shortened_verify_url)
 
 def verified_too_quickly(userid, token):
     """Return True when a verification link is used before its required wait time."""
-    issued_at = temp.VERIFY_LINK_ISSUED_AT.get(int(userid), {}).get(token)
-    if not issued_at:
+    verify_link = temp.VERIFY_LINKS.get(token)
+    if not verify_link or verify_link['user_id'] != int(userid):
         return False
-    elapsed = (datetime.now(pytz.UTC) - issued_at).total_seconds()
+    elapsed = (datetime.now(pytz.UTC) - verify_link['issued_at']).total_seconds()
     return elapsed < VERIFY_MINIMUM_SECONDS
 
 def consume_verification_token(userid, token):
     """Prevent a rejected verification link from being reused."""
     if int(userid) in TOKENS and token in TOKENS[int(userid)]:
         TOKENS[int(userid)][token] = True
-    temp.VERIFY_LINK_ISSUED_AT.get(int(userid), {}).pop(token, None)
+    temp.VERIFY_LINKS.pop(token, None)
 
 async def get_verify_status(userid):
     status = temp.VERIFY.get(userid)
@@ -684,6 +690,7 @@ async def verify_user(bot, userid, token):
         await db.add_user(user.id, user.first_name)
         await bot.send_message(LOG_CHANNEL, script.LOG_TEXT_P.format(user.id, user.mention))
     TOKENS[user.id] = {token: True}
+    temp.VERIFY_LINKS.pop(token, None)
     tz = pytz.timezone('Asia/Kolkata')
     date_var = datetime.now(tz)+timedelta(hours=VERIFY_EXPIRE)
     temp_time = date_var.strftime("%H:%M:%S")
