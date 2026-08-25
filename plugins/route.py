@@ -14,7 +14,7 @@ from LucyBot.util.custom_dl import ByteStreamer
 from LucyBot.util.time_format import get_readable_time
 from LucyBot.util.render_template import render_page
 from info import *
-from utils import temp
+from utils import temp, get_verify_shorted_link
 
 
 routes = web.RouteTableDef()
@@ -33,6 +33,104 @@ async def verify_redirect_handler(request: web.Request):
         raise web.HTTPNotFound(text="This verification link is invalid or expired.")
     start_payload = f"verify-{verify_link['user_id']}-{token}-{verify_link['file_id']}"
     raise web.HTTPFound(f"https://t.me/{temp.U_NAME}?{urlencode({'start': start_payload})}")
+
+
+@routes.get(r"/go/{token:[A-Za-z0-9]+}", allow_head=True)
+async def verify_landing_handler(request: web.Request):
+    """Serve a minimal landing page before redirecting to the shortlink."""
+    token = request.match_info['token']
+    verify_link = temp.VERIFY_LINKS.get(token)
+    if not verify_link:
+        raise web.HTTPNotFound(text="This verification link is invalid or expired.")
+
+    verify_url = f"{URL.rstrip('/')}/v/{token}"
+    shortened_verify_url = await get_verify_shorted_link(verify_url)
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="refresh" content="5;url={shortened_verify_url}">
+        <title>Verifying...</title>
+        <style>
+            body {{
+                margin: 0;
+                padding: 0;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                background-color: #f5f5f5;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                color: #333;
+            }}
+            .bento-box {{
+                background: white;
+                padding: 40px;
+                border-radius: 24px;
+                box-shadow: 0 4px 24px rgba(0, 0, 0, 0.05);
+                text-align: center;
+                max-width: 400px;
+                width: 90%;
+            }}
+            h1 {{
+                font-size: 24px;
+                margin-bottom: 12px;
+                font-weight: 600;
+            }}
+            p {{
+                font-size: 16px;
+                color: #666;
+                margin-bottom: 24px;
+                line-height: 1.5;
+            }}
+            .countdown {{
+                font-size: 32px;
+                font-weight: 700;
+                color: #000;
+                margin-bottom: 16px;
+            }}
+            .loader {{
+                width: 24px;
+                height: 24px;
+                border: 3px solid #eee;
+                border-top: 3px solid #333;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin: 0 auto;
+            }}
+            @keyframes spin {{
+                0% {{ transform: rotate(0deg); }}
+                100% {{ transform: rotate(360deg); }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="bento-box">
+            <h1>Just a moment</h1>
+            <p>We are preparing your verification link. You will be redirected shortly.</p>
+            <div class="countdown" id="timer">5</div>
+            <div class="loader"></div>
+        </div>
+
+        <script>
+            let timeLeft = 5;
+            const timerEl = document.getElementById('timer');
+            const countdown = setInterval(() => {{
+                timeLeft--;
+                timerEl.textContent = Math.max(0, timeLeft);
+                if (timeLeft <= 0) {{
+                    clearInterval(countdown);
+                    window.location.href = "{shortened_verify_url}";
+                }}
+            }}, 1000);
+        </script>
+    </body>
+    </html>
+    """
+    return web.Response(text=html, content_type="text/html")
 
 
 @routes.get(r"/watch/{path:\S+}", allow_head=True)

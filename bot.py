@@ -1,4 +1,5 @@
 from pyrogram import Client, idle, __version__
+import patch
 from pyrogram.raw.all import layer
 import logging
 import logging.config

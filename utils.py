@@ -652,9 +652,8 @@ async def get_token(bot, userid, _link, fileid):
     }
     # The shortener only receives this opaque Koyeb/FQDN URL.  It contains no
     # API key, Telegram user ID, or file ID.
-    verify_url = f"{URL.rstrip('/')}/v/{token}"
-    shortened_verify_url = await get_verify_shorted_link(verify_url)
-    return str(shortened_verify_url)
+    landing_url = f"{URL.rstrip('/')}/go/{token}"
+    return str(landing_url)
 
 def verified_too_quickly(userid, token):
     """Return True when a verification link is used before its required wait time."""
