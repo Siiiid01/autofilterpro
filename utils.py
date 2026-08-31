@@ -620,84 +620,107 @@ async def get_verify_shorted_link(link):
             return link
 
 async def check_token(bot, userid, token):
-    user = await bot.get_users(userid)
+    uid = int(userid)
+    user = await bot.get_users(uid)
     if not await db.is_user_exist(user.id):
         await db.add_user(user.id, user.first_name)
         await bot.send_message(LOG_CHANNEL, script.LOG_TEXT_P.format(user.id, user.mention))
-    if user.id in TOKENS.keys():
-        TKN = TOKENS[user.id]
-        if token in TKN.keys():
+    if uid in TOKENS:
+        TKN = TOKENS[uid]
+        if token in TKN:
             is_used = TKN[token]
             if is_used == True:
                 return False
             else:
                 return True
-    else:
-        return False
+    return False
 
 async def get_token(bot, userid, _link, fileid):
-    user = await bot.get_users(userid)
+    uid = int(userid)
+    user = await bot.get_users(uid)
     if not await db.is_user_exist(user.id):
         await db.add_user(user.id, user.first_name)
         await bot.send_message(LOG_CHANNEL, script.LOG_TEXT_P.format(user.id, user.mention))
-    for old_token in TOKENS.get(user.id, {}):
+    # Invalidate any old pending token for this user
+    for old_token in list(TOKENS.get(uid, {}).keys()):
         temp.VERIFY_LINKS.pop(old_token, None)
+        await db.delete_verify_token(old_token)
 
     token = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
-    TOKENS[user.id] = {token: False}
-    temp.VERIFY_LINKS[token] = {
-        'user_id': user.id,
+    TOKENS[uid] = {token: False}
+    issued_at = datetime.now(pytz.UTC)
+    token_data = {
+        'user_id': uid,
         'file_id': str(fileid),
-        'issued_at': datetime.now(pytz.UTC),
+        'issued_at': issued_at,
     }
-    # The shortener only receives this opaque Koyeb/FQDN URL.  It contains no
-    # API key, Telegram user ID, or file ID.
+    temp.VERIFY_LINKS[token] = token_data
+    # Persist token to MongoDB so it survives bot restarts
+    await db.save_verify_token(token, token_data)
+    # The bot button always uses the FQDN /go/token URL — never the raw shortlink
     landing_url = f"{URL.rstrip('/')}/go/{token}"
     return str(landing_url)
 
 def verified_too_quickly(userid, token):
     """Return True when a verification link is used before its required wait time."""
+    uid = int(userid)
     verify_link = temp.VERIFY_LINKS.get(token)
-    if not verify_link or verify_link['user_id'] != int(userid):
+    if not verify_link or verify_link['user_id'] != uid:
         return False
-    elapsed = (datetime.now(pytz.UTC) - verify_link['issued_at']).total_seconds()
+    issued = verify_link['issued_at']
+    # Make issued timezone-aware if needed
+    if issued.tzinfo is None:
+        issued = pytz.UTC.localize(issued)
+    elapsed = (datetime.now(pytz.UTC) - issued).total_seconds()
     return elapsed < VERIFY_MINIMUM_SECONDS
 
 def consume_verification_token(userid, token):
     """Prevent a rejected verification link from being reused."""
-    if int(userid) in TOKENS and token in TOKENS[int(userid)]:
-        TOKENS[int(userid)][token] = True
+    uid = int(userid)
+    if uid in TOKENS and token in TOKENS[uid]:
+        TOKENS[uid][token] = True
     temp.VERIFY_LINKS.pop(token, None)
 
 async def get_verify_status(userid):
-    status = temp.VERIFY.get(userid)
+    uid = int(userid)
+    status = temp.VERIFY.get(uid)
     if not status:
-        status = await db.get_verified(userid)
-        temp.VERIFY[userid] = status
+        status = await db.get_verified(uid)
+        temp.VERIFY[uid] = status
     return status
     
 async def update_verify_status(userid, date_temp, time_temp):
-    status = await get_verify_status(userid)
+    uid = int(userid)
+    status = await get_verify_status(uid)
     status["date"] = date_temp
     status["time"] = time_temp
-    temp.VERIFY[userid] = status
-    await db.update_verification(userid, date_temp, time_temp)
+    temp.VERIFY[uid] = status
+    await db.update_verification(uid, date_temp, time_temp)
 
 async def verify_user(bot, userid, token):
-    user = await bot.get_users(int(userid))
+    uid = int(userid)
+    user = await bot.get_users(uid)
     if not await db.is_user_exist(user.id):
         await db.add_user(user.id, user.first_name)
         await bot.send_message(LOG_CHANNEL, script.LOG_TEXT_P.format(user.id, user.mention))
-    TOKENS[user.id] = {token: True}
+    TOKENS[uid] = {token: True}
     temp.VERIFY_LINKS.pop(token, None)
+    # Delete the token from MongoDB now that it's been consumed
+    await db.delete_verify_token(token)
     tz = pytz.timezone('Asia/Kolkata')
-    date_var = datetime.now(tz)+timedelta(hours=VERIFY_EXPIRE)
+    date_var = datetime.now(tz) + timedelta(hours=VERIFY_EXPIRE)
     temp_time = date_var.strftime("%H:%M:%S")
-    date_var, time_var = str(date_var).split(" ")
-    await update_verify_status(user.id, date_var, temp_time)
+    # Immediately update the in-memory cache so same-session file requests skip re-verify
+    temp.VERIFY[uid] = {
+        'date': str(date_var).split(' ')[0],
+        'time': temp_time,
+    }
+    date_var_str, _ = str(date_var).split(' ')
+    await update_verify_status(uid, date_var_str, temp_time)
 
 async def check_verification(bot, userid):
-    user = await bot.get_users(int(userid))
+    uid = int(userid)
+    user = await bot.get_users(uid)
     if not await db.is_user_exist(user.id):
         await db.add_user(user.id, user.first_name)
         await bot.send_message(LOG_CHANNEL, script.LOG_TEXT_P.format(user.id, user.mention))
@@ -708,23 +731,38 @@ async def check_verification(bot, userid):
     curr_time = now.strftime("%H:%M:%S")
     hour1, minute1, second1 = curr_time.split(":")
     curr_time = time(int(hour1), int(minute1), int(second1))
-    status = await get_verify_status(user.id)
+    status = await get_verify_status(uid)
     date_var = status["date"]
     time_var = status["time"]
-    years, month, day = date_var.split('-')
-    comp_date = date(int(years), int(month), int(day))
-    hour, minute, second = time_var.split(":")
-    comp_time = time(int(hour), int(minute), int(second))
-    if comp_date<today:
+    try:
+        years, month, day = date_var.split('-')
+        comp_date = date(int(years), int(month), int(day))
+        hour, minute, second = time_var.split(":")
+        comp_time = time(int(hour), int(minute), int(second))
+    except Exception:
         return False
+    if comp_date < today:
+        return False
+    elif comp_date == today:
+        return comp_time >= curr_time
     else:
-        if comp_date == today:
-            if comp_time<curr_time:
-                return False
-            else:
-                return True
-        else:
-            return True
+        return True
+
+def get_verify_expiry_str(userid):
+    """Return a human-readable expiry string for a verified user, e.g. '05:30 PM'."""
+    uid = int(userid)
+    status = temp.VERIFY.get(uid)
+    if not status:
+        return ""
+    try:
+        t = status["time"]  # HH:MM:SS
+        d = status["date"]  # YYYY-MM-DD
+        h, m, _ = t.split(":")
+        suffix = "AM" if int(h) < 12 else "PM"
+        h12 = int(h) % 12 or 12
+        return f"{h12}:{m} {suffix} on {d}"
+    except Exception:
+        return ""
             
 async def get_seconds(time_string):
     def extract_value_and_unit(ts):

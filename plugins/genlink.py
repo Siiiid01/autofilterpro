@@ -27,7 +27,19 @@ async def gen_link_s(bot, message):
         return await message.reply('Reply to a message to get a shareable link.')
     file_type = replied.media
     if file_type not in [enums.MessageMediaType.VIDEO, enums.MessageMediaType.AUDIO, enums.MessageMediaType.DOCUMENT]:
-        return await message.reply("Reply to a supported media")
+        if message.from_user and message.from_user.id in ADMINS:
+            is_plink = message.command[0].lower() == "plink"
+            post = await replied.copy(LOG_CHANNEL)
+            cmd_type = "/pbatch" if is_plink else "/batch"
+            string = f"{post.id}_{post.id}_{LOG_CHANNEL}_{cmd_type}"
+            b_64 = base64.urlsafe_b64encode(string.encode("ascii")).decode().strip("=")
+            return await message.reply(
+                f"Here is your Link (Special Admin Mode):\nhttps://t.me/{temp.U_NAME}?start=DSTORE-{b_64}",
+                parse_mode=enums.ParseMode.HTML
+            )
+        else:
+            return await message.reply("Reply to a supported media")
+            
     if message.has_protected_content and message.chat.id not in ADMINS:
         return await message.reply("okDa")
 

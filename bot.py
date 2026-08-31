@@ -74,6 +74,14 @@ async def Lucy_start():
     temp.B_NAME = me.first_name
     temp.B_LINK = me.mention
     Codeflix.username = '@' + me.username
+    # Reload pending verification tokens from MongoDB into memory (survives restarts)
+    try:
+        loaded_tokens = await db.load_all_verify_tokens()
+        temp.VERIFY_LINKS.update(loaded_tokens)
+        if loaded_tokens:
+            logging.info(f"Reloaded {len(loaded_tokens)} pending verification token(s) from DB.")
+    except Exception as e:
+        logging.warning(f"Could not reload verify tokens: {e}")
     Codeflix.loop.create_task(check_expired_premium(Codeflix))
     logging.info(f"{me.first_name} with Pyrogram v{__version__} (Layer {layer}) started on {me.username}.")
     logging.info(LOG_STR)

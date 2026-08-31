@@ -29,6 +29,24 @@ logger = logging.getLogger(__name__)
 TIMEZONE = "Asia/Kolkata"
 BATCH_FILES = {}
 
+async def _delete_after(delay: int, *msgs):
+    """Non-blocking helper: delete one or more messages after `delay` seconds."""
+    await asyncio.sleep(delay)
+    for m in msgs:
+        try:
+            await m.delete()
+        except Exception:
+            pass
+
+async def _delete_after(delay: int, *msgs):
+    """Non-blocking helper: delete one or more messages after `delay` seconds."""
+    await asyncio.sleep(delay)
+    for m in msgs:
+        try:
+            await m.delete()
+        except Exception:
+            pass
+
 @Client.on_message(filters.command("start") & filters.incoming)
 async def start(client, message):
     if EMOJI_MODE:    
@@ -351,15 +369,15 @@ async def start(client, message):
 
     elif data.split("-", 1)[0] == "verify":
         userid = data.split("-", 2)[1]
-        token = data.split("-", 3)[2] 
+        token = data.split("-", 3)[2]
         fileid = data.split("-", 3)[3]
         if str(message.from_user.id) != str(userid):
             return await message.reply_text(
-                text="<b>Invalid link or Expired link !</b>",
+                text="<b>❌ Invalid or expired link!</b>",
                 protect_content=False
             )
         is_valid = await check_token(client, userid, token)
-        if is_valid == True:
+        if is_valid:
             if verified_too_quickly(userid, token):
                 consume_verification_token(userid, token)
                 warning_number = await db.record_shortlink_bypass(userid)
@@ -372,7 +390,6 @@ async def start(client, message):
                         ),
                         protect_content=False,
                     )
-
                 await db.ban_user(
                     int(userid),
                     "Repeated shortener bypass",
@@ -387,31 +404,108 @@ async def start(client, message):
                     ),
                     protect_content=False,
                 )
-            btn = [[
-                InlineKeyboardButton("ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ɢᴇᴛ ғɪʟᴇ", url=f"https://telegram.me/{temp.U_NAME}?start=files_{fileid}")
-            ]]
+
+            # ── Mark user as verified FIRST so same-session file delivery works ──
+            await verify_user(client, userid, token)
+            await vr_db.save_verification(message.from_user.id)
+
+            # Build human-readable expiry string
+            expiry_str = get_verify_expiry_str(userid)
+            expiry_line = f"\n\n⏳ <b>Verified until:</b> <code>{expiry_str}</code>" if expiry_str else ""
+
             await message.reply_photo(
                 photo="https://i.ibb.co/FqxQgMHK/Purple-and-Pink-Certified-Overthinker-Typography-T-Shirt01.png",
-                caption=f"<blockquote><b>👋 ʜᴇʏ {message.from_user.mention}, ʏᴏᴜ'ʀᴇ ᴀʀᴇ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴠᴇʀɪꜰɪᴇᴅ ✅\n\nɴᴏᴡ ʏᴏᴜ'ᴠᴇ ᴜɴʟɪᴍɪᴛᴇᴅ ᴀᴄᴄᴇꜱꜱ ғᴏʀ {VERIFY_EXPIRE} ʜᴏᴜʀs🎉</blockquote></b>",
-                reply_markup=InlineKeyboardMarkup(btn)
+                caption=(
+                    f"<blockquote><b>👋 ʜᴇʏ {message.from_user.mention},\n\n"
+                    f"ʏᴏᴜ'ʀᴇ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴠᴇʀɪꜰɪᴇᴅ ✅\n\n"
+                    f"ɴᴏᴡ ʏᴏᴜ'ᴠᴇ ᴜɴʟɪᴍɪᴛᴇᴅ ᴀᴄᴄᴇꜱꜱ ꜰᴏʀ {VERIFY_EXPIRE} ʜᴏᴜʀꜱ 🎉"
+                    f"{expiry_line}</b></blockquote>"
+                ),
             )
-            await verify_user(client, userid, token) 
-            await vr_db.save_verification(message.from_user.id) 
+
+            # Log the verification
             now = datetime.now()
-            current_time = now.strftime("%H:%M:%S")
-            current_date = now.strftime("%Y-%m-%d")
-            
             lucy_message = (
                 f"Name: {message.from_user.mention}\n"
-                f"Time: {current_time}\n"
-                f"Date: {current_date}\n"
+                f"Time: {now.strftime('%H:%M:%S')}\n"
+                f"Date: {now.strftime('%Y-%m-%d')}\n"
                 f"#verify_completed"
             )
             await client.send_message(chat_id=VERIFIED_LOG, text=lucy_message)
 
+            # ── Auto-deliver the file immediately — no button click needed ──
+            try:
+                files_ = await get_file_details(fileid)
+                if files_:
+                    files_obj = files_[0]
+                    title = ' '.join(filter(
+                        lambda x: not x.startswith('[') and not x.startswith('@') and not x.startswith('www.'),
+                        files_obj.file_name.split()
+                    ))
+                    size = get_size(files_obj.file_size)
+                    f_caption = files_obj.caption
+                    if CUSTOM_FILE_CAPTION:
+                        try:
+                            f_caption = CUSTOM_FILE_CAPTION.format(
+                                file_name='' if title is None else title,
+                                file_size='' if size is None else size,
+                                file_caption='' if f_caption is None else f_caption
+                            )
+                        except Exception:
+                            pass
+                    if f_caption is None:
+                        f_caption = title
+                    btn_f = []
+                    if STREAM_MODE:
+                        btn_f = [[InlineKeyboardButton(
+                            '🚀 ꜰᴀꜱᴛ ᴅᴏᴡɴʟᴏᴀᴅ / ᴡᴀᴛᴄʜ ᴏɴʟɪɴᴇ 🖥️',
+                            callback_data=f'generate_stream_link:{fileid}'
+                        )]]
+                    if MOVIE_UPDATE_CHANNEL_LNK:
+                        btn_f.append([InlineKeyboardButton('📌 ᴊᴏɪɴ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ 📌', url=MOVIE_UPDATE_CHANNEL_LNK)])
+                    file_msg = await client.send_cached_media(
+                        chat_id=message.from_user.id,
+                        file_id=fileid,
+                        caption=f_caption,
+                        protect_content=False,
+                        reply_markup=InlineKeyboardMarkup(btn_f) if btn_f else None
+                    )
+                    k = await client.send_message(
+                        chat_id=message.from_user.id,
+                        text=(
+                            f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\n"
+                            f"ᴛʜɪꜱ ᴍᴏᴠɪᴇ ꜰɪʟᴇ/ᴠɪᴅᴇᴏ ᴡɪʟʟ ʙᴇ ᴅᴇʟᴇᴛᴇᴅ ɪɴ "
+                            f"<b><u><code>{get_time(DELETE_TIME)}</code></u></b> 🫥 "
+                            f"<i>(ᴅᴜᴇ ᴛᴏ ᴄᴏᴘʏʀɪɢʜᴛ ɪꜱꜱᴜᴇꜱ)</i>.\n\n"
+                            "<b><i>ᴘʟᴇᴀꜱᴇ ꜰᴏʀᴡᴀʀᴅ ᴛʜɪꜱ ꜰɪʟᴇ ᴛᴏ ꜱᴏᴍᴇᴡʜᴇʀᴇ ᴇʟꜱᴇ ᴀɴᴅ ꜱᴛᴀʀᴛ ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴛʜᴇʀᴇ</i></b>"
+                        )
+                    )
+                    asyncio.create_task(_delete_after(DELETE_TIME, file_msg, k))
+                else:
+                    # fileid not in DB — send a deep link button as fallback
+                    btn = [[InlineKeyboardButton(
+                        "📁 ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ɢᴇᴛ ꜰɪʟᴇ",
+                        url=f"https://telegram.me/{temp.U_NAME}?start=files_{fileid}"
+                    )]]
+                    await client.send_message(
+                        chat_id=message.from_user.id,
+                        text="<b>Your file is ready! Click below:</b>",
+                        reply_markup=InlineKeyboardMarkup(btn)
+                    )
+            except Exception as e:
+                logger.warning(f"Auto-deliver after verify failed for fileid={fileid}: {e}")
+                btn = [[InlineKeyboardButton(
+                    "📁 ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ɢᴇᴛ ꜰɪʟᴇ",
+                    url=f"https://telegram.me/{temp.U_NAME}?start=files_{fileid}"
+                )]]
+                await client.send_message(
+                    chat_id=message.from_user.id,
+                    text="<b>Your file is ready! Click below:</b>",
+                    reply_markup=InlineKeyboardMarkup(btn)
+                )
         else:
             return await message.reply_text(
-                text="<b>Invalid link or Expired link !</b>",
+                text="<b>❌ Invalid or expired link!</b>",
                 protect_content=False
             )
         return
@@ -511,8 +605,7 @@ async def start(client, message):
                         protect_content=False,
                         reply_markup=InlineKeyboardMarkup(btn)
                     )
-                    await asyncio.sleep(180)
-                    await l.delete()
+                    asyncio.create_task(_delete_after(300, l))
                     return
             if STREAM_MODE:
                 btn = [
@@ -534,10 +627,7 @@ async def start(client, message):
             )
             filesarr.append(msg)
         k = await client.send_message(chat_id=message.from_user.id, text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nᴛʜɪꜱ ᴍᴏᴠɪᴇ ꜰɪʟᴇ/ᴠɪᴅᴇᴏ ᴡɪʟʟ ʙᴇ ᴅᴇʟᴇᴛᴇᴅ ɪɴ <b><u><code>{get_time(DELETE_TIME)}</code></u> 🫥 <i></b>(ᴅᴜᴇ ᴛᴏ ᴄᴏᴘʏʀɪɢʜᴛ ɪꜱꜱᴜᴇꜱ)</i>.\n\n<b><i>ᴘʟᴇᴀꜱᴇ ꜰᴏʀᴡᴀʀᴅ ᴛʜɪꜱ ꜰɪʟᴇ ᴛᴏ ꜱᴏᴍᴇᴡʜᴇʀᴇ ᴇʟꜱᴇ ᴀɴᴅ ꜱᴛᴀʀᴛ ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴛʜᴇʀᴇ</i></b>")
-        await asyncio.sleep(DELETE_TIME)
-        for x in filesarr:
-            await x.delete()
-        await k.edit_text("<b>ʏᴏᴜʀ ᴀʟʟ ᴠɪᴅᴇᴏꜱ/ꜰɪʟᴇꜱ ᴀʀᴇ ᴅᴇʟᴇᴛᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ !\nᴋɪɴᴅʟʏ ꜱᴇᴀʀᴄʜ ᴀɢᴀɪɴ</b>")
+        asyncio.create_task(_delete_after(DELETE_TIME, *filesarr, k))
         return
     elif data.startswith("files"):
         current_time = datetime.now(pytz.timezone(TIMEZONE))
@@ -588,12 +678,11 @@ async def start(client, message):
                         InlineKeyboardButton("ʜᴏᴡ ᴛᴏ ᴠᴇʀɪғʏ", url=HOW_TO_VERIFY)
                    ]]
                    l = await message.reply_text(
-                       text=f"<blockquote><b>ʜᴇʏ ʙʀᴏ,\n\n ‼️ ʏᴏᴜ'ʀᴇ ɴᴏᴛ ᴠᴇʀɪғɪᴇᴅ ᴛᴏᴅᴀʏ ‼️\n\n ›› ᴘʟᴇᴀsᴇ ᴠᴇʀɪғʏ ᴀɴᴅ ɢᴇᴛ ᴜɴʟɪᴍɪᴛᴇᴅ ᴀᴄᴄᴇss ғᴏʀ {VERIFY_EXPIRE} ʜᴏᴜʀs ✅\n\n ›› ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴅɪʀᴇᴄᴛ ғɪʟᴇs ᴛʜᴇɴ ʏᴏᴜ ᴄᴀɴ ᴛᴀᴋᴇ ᴘʀᴇᴍɪᴜᴍ sᴇʀᴠɪᴄᴇs.\nCᴏɴᴛᴀᴄᴛ @Anime106_Request_bot</blockquote></b>",
+                       text=f"<blockquote><b>ʜᴇʏ ʙʀᴏ,\n\n ‼️ ʏᴏᴜ'ʀᴇ ɴᴏᴛ ᴠᴇʀɪꜰɪᴇᴅ ᴛᴏᴅᴀʏ ‼️\n\n ›› ᴘʟᴇᴀsᴇ ᴠᴇʀɪꜰʏ ᴀɴᴅ ɢᴇᴛ ᴜɴʟɪᴍɪᴛᴇᴅ ᴀᴄᴄᴇss ғᴏʀ {VERIFY_EXPIRE} ʜᴏᴜʀs ✅\n\n ›› ɪғ ʏᴏᴜ ᴡᴀɴᴛ ᴅɪʀᴇᴄᴛ ғɪʟᴇs ᴛʜᴇɴ ʏᴏᴜ ᴄᴀɴ ᴛᴀᴋᴇ ᴘʀᴇᴍɪᴜᴍ sᴇʀᴠɪᴄᴇs.\nCᴏɴᴛᴀᴄᴛ @Anime106_Request_bot</blockquote></b>",
                        protect_content=False,
                        reply_markup=InlineKeyboardMarkup(btn)
                    )
-                   await asyncio.sleep(180)
-                   await l.delete()
+                   asyncio.create_task(_delete_after(300, l))
                    return
             if STREAM_MODE:
                 btn = [
@@ -632,9 +721,7 @@ async def start(client, message):
                 "<b><i>ᴘʟᴇᴀꜱᴇ ꜰᴏʀᴡᴀʀᴅ ᴛʜɪꜱ ꜰɪʟᴇ ᴛᴏ ꜱᴏᴍᴇᴡʜᴇʀᴇ ᴇʟꜱᴇ ᴀɴᴅ ꜱᴛᴀʀᴛ ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴛʜᴇʀᴇ</i></b>",
                 quote=True
             )
-            await asyncio.sleep(DELETE_TIME)
-            await msg.delete()
-            await k.edit_text("<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!</b>")
+            asyncio.create_task(_delete_after(DELETE_TIME, msg, k))
             return
         except Exception as e:
             logger.warning(f"send_cached_media fallback failed for file_id={file_id}: {e}")
@@ -669,8 +756,7 @@ async def start(client, message):
                 protect_content=False,
                 reply_markup=InlineKeyboardMarkup(btn)
             )
-            await asyncio.sleep(180)
-            await l.delete()
+            asyncio.create_task(_delete_after(300, l))
             return
     if STREAM_MODE:
         btn = [
@@ -699,9 +785,7 @@ async def start(client, message):
         "<b><i>ᴘʟᴇᴀꜱᴇ ꜰᴏʀᴡᴀʀᴅ ᴛʜɪꜱ ꜰɪʟᴇ ᴛᴏ ꜱᴏᴍᴇᴡʜᴇʀᴇ ᴇʟꜱᴇ ᴀɴᴅ ꜱᴛᴀʀᴛ ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴛʜᴇʀᴇ</i></b>",
         quote=True
     )     
-    await asyncio.sleep(DELETE_TIME)
-    await msg.delete()
-    await k.edit_text("<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!</b>")
+    asyncio.create_task(_delete_after(DELETE_TIME, msg, k))
     return
 
 

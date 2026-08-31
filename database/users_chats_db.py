@@ -35,7 +35,8 @@ class Database:
         self.users = self.db.uersz
         self.req = self.db.requests
         self.botcol = self.db["deendayal"]  
-        self.bot_id_col = self.db["bot_id"] 
+        self.bot_id_col = self.db["bot_id"]
+        self.verify_tokens = self.db["verify_tokens"]  # Persistent verification tokens
 
     async def find_join_req(self, id):
         return bool(await self.req.find_one({'id': id})) 
@@ -70,6 +71,45 @@ class Database:
             ),
         )
 
+    # ============================
+    # Verify Token Persistence
+    # ============================
+    async def save_verify_token(self, token: str, data: dict):
+        """Persist a pending verification token to MongoDB."""
+        doc = {
+            '_id': token,
+            'user_id': int(data['user_id']),
+            'file_id': str(data['file_id']),
+            'issued_at': data['issued_at'],
+            'expires_at': data['issued_at'] + datetime.timedelta(hours=VERIFY_EXPIRE + 1),
+        }
+        await self.verify_tokens.replace_one({'_id': token}, doc, upsert=True)
+
+    async def delete_verify_token(self, token: str):
+        """Remove a consumed or invalidated token from MongoDB."""
+        await self.verify_tokens.delete_one({'_id': token})
+
+    async def load_all_verify_tokens(self) -> dict:
+        """Load all non-expired tokens from MongoDB into memory on startup."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        result = {}
+        async for doc in self.verify_tokens.find({'expires_at': {'$gt': now}}):
+            token = doc['_id']
+            issued = doc['issued_at']
+            if issued.tzinfo is None:
+                issued = issued.replace(tzinfo=datetime.timezone.utc)
+            result[token] = {
+                'user_id': int(doc['user_id']),
+                'file_id': str(doc['file_id']),
+                'issued_at': issued,
+            }
+        # Clean up expired tokens
+        await self.verify_tokens.delete_many({'expires_at': {'$lte': now}})
+        return result
+
+    # ============================
+    # Verification Status
+    # ============================
     async def update_verification(self, id, date, time):
         status = {
             'date': str(date),
@@ -238,6 +278,7 @@ class Database:
     async def get_user(self, user_id):
         user_data = await self.users.find_one({"id": user_id})
         return user_data
+
     async def update_user(self, user_data):
         await self.users.update_one({"id": user_data["id"]}, {"$set": user_data}, upsert=True)
 
@@ -252,9 +293,6 @@ class Database:
             else:
                 await self.users.update_one({"id": user_id}, {"$set": {"expiry_time": None}})
         return False
-        
-    async def update_user(self, user_data):
-        await self.users.update_one({"id": user_data["id"]}, {"$set": user_data}, upsert=True)
 
     async def update_one(self, filter_query, update_data):
         try:
@@ -283,7 +321,6 @@ class Database:
         return False
 
     async def give_free_trial(self, user_id):
-        user_id = user_id
         seconds = 5*60         
         expiry_time = datetime.datetime.now() + datetime.timedelta(seconds=seconds)
         user_data = {"id": user_id, "expiry_time": expiry_time, "has_free_trial": True}
@@ -298,6 +335,7 @@ class Database:
     async def get_bot_setting(self, bot_id, setting_key, default_value):
         bot = await self.botcol.find_one({'id': int(bot_id)}, {setting_key: 1, '_id': 0})
         return bot[setting_key] if bot and setting_key in bot else default_value
+
     async def update_bot_setting(self, bot_id, setting_key, value):
         await self.botcol.update_one(
             {'id': int(bot_id)}, 
@@ -320,5 +358,3 @@ class Database:
         
 db = Database(DATABASE_URI, DATABASE_NAME)
 db2 = Database(DATABASE_URI2, DATABASE_NAME)
-
-

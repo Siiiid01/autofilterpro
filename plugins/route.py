@@ -15,6 +15,7 @@ from LucyBot.util.time_format import get_readable_time
 from LucyBot.util.render_template import render_page
 from info import *
 from utils import temp, get_verify_shorted_link
+from database.users_chats_db import db as userdb
 
 
 routes = web.RouteTableDef()
@@ -29,101 +30,127 @@ async def verify_redirect_handler(request: web.Request):
     """Resolve an opaque FQDN verification URL into a Telegram deep link."""
     token = request.match_info['token']
     verify_link = temp.VERIFY_LINKS.get(token)
+    # DB fallback: token may have been issued before last restart
     if not verify_link:
-        raise web.HTTPNotFound(text="This verification link is invalid or expired.")
+        try:
+            verify_link = (await userdb.load_all_verify_tokens()).get(token)
+            if verify_link:
+                temp.VERIFY_LINKS[token] = verify_link  # re-populate cache
+        except Exception:
+            pass
+    if not verify_link:
+        raise web.HTTPNotFound(text="This verification link is invalid or has expired. Please request a new one from the bot.")
     start_payload = f"verify-{verify_link['user_id']}-{token}-{verify_link['file_id']}"
     raise web.HTTPFound(f"https://t.me/{temp.U_NAME}?{urlencode({'start': start_payload})}")
 
 
 @routes.get(r"/go/{token:[A-Za-z0-9]+}", allow_head=True)
 async def verify_landing_handler(request: web.Request):
-    """Serve a minimal landing page before redirecting to the shortlink."""
+    """Serve a premium landing page. The user sees only the FQDN /v/ URL — never the shortlink."""
     token = request.match_info['token']
     verify_link = temp.VERIFY_LINKS.get(token)
+    # DB fallback: re-populate cache if bot restarted
     if not verify_link:
-        raise web.HTTPNotFound(text="This verification link is invalid or expired.")
+        try:
+            verify_link = (await userdb.load_all_verify_tokens()).get(token)
+            if verify_link:
+                temp.VERIFY_LINKS[token] = verify_link
+        except Exception:
+            pass
+    if not verify_link:
+        raise web.HTTPNotFound(text="This verification link is invalid or has expired. Please request a new one from the bot.")
 
-    verify_url = f"{URL.rstrip('/')}/v/{token}"
-    shortened_verify_url = await get_verify_shorted_link(verify_url)
-    
+    # The /v/ FQDN URL is what the shortlink will redirect to after the ad page.
+    # The user never sees the shortlink URL directly — only the FQDN in the button.
+    verify_fqdn_url = f"{URL.rstrip('/')}/v/{token}"
+    # Shorten the internal /v/ URL for the actual verification flow (ad page)
+    try:
+        shortened_url = await get_verify_shorted_link(verify_fqdn_url)
+    except Exception:
+        shortened_url = verify_fqdn_url  # fallback: use FQDN directly
+
     html = f"""
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta http-equiv="refresh" content="5;url={shortened_verify_url}">
-        <title>Verifying...</title>
+        <title>Verify to Get File</title>
         <style>
+            * {{ box-sizing: border-box; margin: 0; padding: 0; }}
             body {{
-                margin: 0;
-                padding: 0;
-                display: flex;
-                justify-content: center;
-                align-items: center;
                 min-height: 100vh;
-                background-color: #f5f5f5;
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                color: #333;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+                font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+                color: #fff;
+                padding: 20px;
             }}
-            .bento-box {{
-                background: white;
-                padding: 40px;
+            .card {{
+                background: rgba(255,255,255,0.08);
+                backdrop-filter: blur(16px);
+                -webkit-backdrop-filter: blur(16px);
+                border: 1px solid rgba(255,255,255,0.15);
                 border-radius: 24px;
-                box-shadow: 0 4px 24px rgba(0, 0, 0, 0.05);
+                padding: 48px 36px;
+                max-width: 420px;
+                width: 100%;
                 text-align: center;
-                max-width: 400px;
-                width: 90%;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.4);
             }}
-            h1 {{
-                font-size: 24px;
-                margin-bottom: 12px;
+            .icon {{ font-size: 52px; margin-bottom: 16px; }}
+            h1 {{ font-size: 22px; font-weight: 700; margin-bottom: 10px; letter-spacing: 0.5px; }}
+            p {{ font-size: 14px; color: rgba(255,255,255,0.7); line-height: 1.6; margin-bottom: 28px; }}
+            .timer {{
+                font-size: 42px;
+                font-weight: 800;
+                margin-bottom: 20px;
+                background: linear-gradient(90deg, #a78bfa, #60a5fa);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }}
+            .btn {{
+                display: inline-block;
+                padding: 14px 32px;
+                border-radius: 50px;
+                background: linear-gradient(90deg, #7c3aed, #2563eb);
+                color: #fff;
+                font-size: 15px;
                 font-weight: 600;
+                text-decoration: none;
+                box-shadow: 0 4px 20px rgba(124,58,237,0.5);
+                transition: transform 0.2s, box-shadow 0.2s;
+                cursor: pointer;
+                border: none;
+                width: 100%;
             }}
-            p {{
-                font-size: 16px;
-                color: #666;
-                margin-bottom: 24px;
-                line-height: 1.5;
-            }}
-            .countdown {{
-                font-size: 32px;
-                font-weight: 700;
-                color: #000;
-                margin-bottom: 16px;
-            }}
-            .loader {{
-                width: 24px;
-                height: 24px;
-                border: 3px solid #eee;
-                border-top: 3px solid #333;
-                border-radius: 50%;
-                animation: spin 1s linear infinite;
-                margin: 0 auto;
-            }}
-            @keyframes spin {{
-                0% {{ transform: rotate(0deg); }}
-                100% {{ transform: rotate(360deg); }}
-            }}
+            .btn:hover {{ transform: translateY(-2px); box-shadow: 0 8px 28px rgba(124,58,237,0.7); }}
+            .note {{ font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 20px; }}
         </style>
     </head>
     <body>
-        <div class="bento-box">
-            <h1>Just a moment</h1>
-            <p>We are preparing your verification link. You will be redirected shortly.</p>
-            <div class="countdown" id="timer">5</div>
-            <div class="loader"></div>
+        <div class="card">
+            <div class="icon">🔐</div>
+            <h1>One-Time Verification</h1>
+            <p>Complete a quick verification to unlock your file. Click the button below and follow the steps.</p>
+            <div class="timer" id="timer">5</div>
+            <a class="btn" id="verifyBtn" href="{shortened_url}" target="_blank">✅ Verify Now</a>
+            <p class="note">You will be automatically redirected in <span id="sec">5</span> seconds.</p>
         </div>
-
         <script>
-            let timeLeft = 5;
+            let t = 5;
             const timerEl = document.getElementById('timer');
-            const countdown = setInterval(() => {{
-                timeLeft--;
-                timerEl.textContent = Math.max(0, timeLeft);
-                if (timeLeft <= 0) {{
-                    clearInterval(countdown);
-                    window.location.href = "{shortened_verify_url}";
+            const secEl = document.getElementById('sec');
+            const btn = document.getElementById('verifyBtn');
+            const iv = setInterval(() => {{
+                t--;
+                timerEl.textContent = Math.max(0, t);
+                secEl.textContent = Math.max(0, t);
+                if (t <= 0) {{
+                    clearInterval(iv);
+                    window.location.href = "{shortened_url}";
                 }}
             }}, 1000);
         </script>
@@ -156,7 +183,7 @@ async def stream_handler(request: web.Request):
         raise web.HTTPInternalServerError(text=str(e))
 
 @routes.get(r"/{path:\S+}", allow_head=True)
-async def stream_handler(request: web.Request):
+async def catch_all_stream_handler(request: web.Request):
     try:
         path = request.match_info["path"]
         match = re.search(r"^([a-zA-Z0-9_-]{6})(\d+)$", path)
