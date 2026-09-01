@@ -9,7 +9,7 @@ async_client = motor.motor_asyncio.AsyncIOMotorClient(DATABASE_URI)
 mydb = async_client["filename"]
 
 async def add_name(user_id, filename):
-    user_db = mydb[str(user_id)]
+    user_db = mydb[f"{COLLECTION_NAME}_{user_id}"]
     user = {'_id': filename}
     existing_user = await user_db.find_one({'_id': filename})
     if existing_user is not None:
@@ -21,7 +21,7 @@ async def add_name(user_id, filename):
         return False
       
 async def delete_all_msg(user_id):
-    user_db = mydb[str(user_id)]
+    user_db = mydb[f"{COLLECTION_NAME}_{user_id}"]
     await user_db.delete_many({})
 
 
@@ -30,13 +30,13 @@ class Database:
     def __init__(self, uri, database_name):
         self._client = motor.motor_asyncio.AsyncIOMotorClient(uri)
         self.db = self._client[database_name]
-        self.col = self.db.users
-        self.grp = self.db.groups
-        self.users = self.db.users
-        self.req = self.db.requests
-        self.botcol = self.db["deendayal"]  
-        self.bot_id_col = self.db["bot_id"]
-        self.verify_tokens = self.db["verify_tokens"]  # Persistent verification tokens
+        self.col = self.db[f"{COLLECTION_NAME}_users"]
+        self.grp = self.db[f"{COLLECTION_NAME}_groups"]
+        self.users = self.db[f"{COLLECTION_NAME}_users"]
+        self.req = self.db[f"{COLLECTION_NAME}_requests"]
+        self.botcol = self.db[f"{COLLECTION_NAME}_deendayal"]  
+        self.bot_id_col = self.db[f"{COLLECTION_NAME}_bot_id"]
+        self.verify_tokens = self.db[f"{COLLECTION_NAME}_verify_tokens"]  # Persistent verification tokens
 
     async def find_join_req(self, id):
         return bool(await self.req.find_one({'id': id})) 

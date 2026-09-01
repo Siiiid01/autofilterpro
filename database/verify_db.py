@@ -2,13 +2,13 @@ from os import environ
 from datetime import timedelta, datetime
 from pymongo import MongoClient
 import pytz
-from info import DATABASE_URI, DATABASE_NAME
+from info import DATABASE_URI, DATABASE_NAME, COLLECTION_NAME
 
 class VR_db:
     def __init__(self, db_url, db_name, timezone):
         self.client = MongoClient(db_url)
         self.db = self.client[db_name]
-        self.collection = self.db.verifications
+        self.collection = self.db[f"{COLLECTION_NAME}_verifications"]
         self.timezone = pytz.timezone(timezone)
 
     async def save_verification(self, user_id):

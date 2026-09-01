@@ -26,8 +26,8 @@ instance = Instance.from_db(db)
 
 #secondary db
 client2 = AsyncIOMotorClient(DATABASE_URI2) if DATABASE_URI2 else None
-db2 = client2[DATABASE_NAME] if client2 else None
-instance2 = Instance.from_db(db2) if db2 else None
+db2 = client2[DATABASE_NAME] if client2 is not None else None
+instance2 = Instance.from_db(db2) if db2 is not None else None
 
 
 # Primary DB Model

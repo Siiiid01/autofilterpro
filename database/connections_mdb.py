@@ -1,5 +1,5 @@
 import pymongo
-from info import DATABASE_URI, DATABASE_NAME
+from info import DATABASE_URI, DATABASE_NAME, COLLECTION_NAME
 
 import logging
 logger = logging.getLogger(__name__)
@@ -7,7 +7,7 @@ logger.setLevel(logging.ERROR)
 
 myclient = pymongo.MongoClient(DATABASE_URI)
 mydb = myclient[DATABASE_NAME]
-mycol = mydb['CONNECTION'] 
+mycol = mydb[f"{COLLECTION_NAME}_CONNECTION"] 
 
 
 async def add_connection(group_id, user_id):

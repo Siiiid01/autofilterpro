@@ -20,7 +20,7 @@ def is_enabled(value, default):
 # ============================
 # Bot Information Configuration
 # ============================
-SESSION = environ.get('SESSION', 'quirky2')
+SESSION = environ.get('SESSION', 'quirky1')
 API_ID = int(environ.get('API_ID', ''))
 API_HASH = environ.get('API_HASH', '')
 BOT_TOKEN = environ.get('BOT_TOKEN', "")
@@ -81,7 +81,7 @@ AUTO_APPROVE_CHAT_IDS = [
 DATABASE_URI = environ.get('DATABASE_URI', "")
 DATABASE_URI2 = environ.get('DATABASE_URI2', "")
 DATABASE_NAME = environ.get('DATABASE_NAME', "")
-COLLECTION_NAME = environ.get('COLLECTION_NAME', 'quirky2')
+COLLECTION_NAME = environ.get('COLLECTION_NAME', 'quirky1')
 
 # ============================
 # Movie Notification & Update Settings

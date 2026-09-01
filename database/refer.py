@@ -1,5 +1,5 @@
 import pymongo
-from info import DATABASE_URI, DATABASE_NAME
+from info import DATABASE_URI, DATABASE_NAME, COLLECTION_NAME
 import logging
 
 logger = logging.getLogger(__name__)
@@ -11,8 +11,8 @@ mydb = myclient[DATABASE_NAME]
 
 class UserTracker:
     def __init__(self):
-        self.user_collection = mydb["referusers"]
-        self.refer_collection = mydb["refers"]
+        self.user_collection = mydb[f"{COLLECTION_NAME}_referusers"]
+        self.refer_collection = mydb[f"{COLLECTION_NAME}_refers"]
 
     def add_user(self, user_id):
         if not self.is_user_in_list(user_id):
