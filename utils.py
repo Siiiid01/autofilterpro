@@ -85,7 +85,7 @@ async def is_subscribed(bot, query, channels):
                 [InlineKeyboardButton(f'Join {chat.title}', url=chat.invite_link)]
             )
         except Exception as e:
-            pass
+            logger.warning(f"is_subscribed error for {channel_id}: {e}")
     return btn
 
 async def is_check_admin(bot, chat_id, user_id):
@@ -191,7 +191,8 @@ async def broadcast_messages(user_id, message):
             pass
         return True, "Success"
     except FloodWait as e:
-        await asyncio.sleep(e.x)
+        from errors import handle_flood_wait
+        await handle_flood_wait(e, logger)
         return await broadcast_messages(user_id, message)
     except InputUserDeactivated:
         await db.delete_user(int(user_id))
@@ -205,6 +206,7 @@ async def broadcast_messages(user_id, message):
         logging.info(f"{user_id} - PeerIdInvalid")
         return False, "Error"
     except Exception as e:
+        logger.warning(f"broadcast failed for {user_id}: {e}")
         return False, "Error"
 
 async def broadcast_messages_group(chat_id, message):
@@ -216,9 +218,11 @@ async def broadcast_messages_group(chat_id, message):
             pass
         return True, "Success"
     except FloodWait as e:
-        await asyncio.sleep(e.x)
+        from errors import handle_flood_wait
+        await handle_flood_wait(e, logger)
         return await broadcast_messages_group(chat_id, message)
     except Exception as e:
+        logger.warning(f"broadcast_messages_group failed for {chat_id}: {e}")
         return False, "Error"
     
 async def search_gagala(text):
@@ -514,36 +518,6 @@ async def get_shortlink(chat_id, link):
         URL = SHORTLINK_URL
         API = SHORTLINK_API
     if URL == "api.shareus.io":
-        # method 1:
-        # https = link.split(":")[0] #splitting https or http from link
-        # if "http" == https: #if https == "http":
-        #     https = "https"
-        #     link = link.replace("http", https) #replacing http to https
-        # conn = http.client.HTTPSConnection("api.shareus.io")
-        # payload = json.dumps({
-        #   "api_key": "4c1YTBacB6PTuwogBiEIFvZN5TI3",
-        #   "monetization": True,
-        #   "destination": link,
-        #   "ad_page": 3,
-        #   "category": "Entertainment",
-        #   "tags": ["trendinglinks"],
-        #   "monetize_with_money": False,
-        #   "price": 0,
-        #   "currency": "INR",
-        #   "purchase_note":""
-        
-        # })
-        # headers = {
-        #   'Keep-Alive': '',
-        #   'Content-Type': 'application/json'
-        # }
-        # conn.request("POST", "/generate_link", payload, headers)
-        # res = conn.getresponse()
-        # data = res.read().decode("utf-8")
-        # parsed_data = json.loads(data)
-        # if parsed_data["status"] == "success":
-        #   return parsed_data["link"]
-    #method 2
         url = f'https://{URL}/easy_api'
         params = {
             "key": API,
@@ -688,6 +662,8 @@ async def get_verify_status(userid):
         status = await db.get_verified(uid)
         temp.VERIFY[uid] = status
     return status
+
+
     
 async def update_verify_status(userid, date_temp, time_temp):
     uid = int(userid)
@@ -803,7 +779,7 @@ async def send_all(bot, userid, files, ident, chat_id, user_name, query):
     if 'is_shortlink' in settings.keys():
         ENABLE_SHORTLINK = settings['is_shortlink']
     else:
-        await save_group_settings(message.chat.id, 'is_shortlink', False)
+        await save_group_settings(chat_id, 'is_shortlink', False)
         ENABLE_SHORTLINK = False
     try:
         if ENABLE_SHORTLINK:
@@ -847,6 +823,8 @@ async def send_all(bot, userid, files, ident, chat_id, user_name, query):
     except PeerIdInvalid:
         await query.answer('Hᴇʏ, Sᴛᴀʀᴛ Bᴏᴛ Fɪʀsᴛ Aɴᴅ Cʟɪᴄᴋ Sᴇɴᴅ Aʟʟ', show_alert=True)
     except Exception as e:
+        from errors import log_exception
+        log_exception(logger, e, context="send_all", userid=userid)
         await query.answer('Hᴇʏ, Sᴛᴀʀᴛ Bᴏᴛ Fɪʀsᴛ Aɴᴅ Cʟɪᴄᴋ Sᴇɴᴅ Aʟʟ', show_alert=True)
         
 async def get_cap(settings, remaining_seconds, files, query, total_results, search):

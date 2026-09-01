@@ -25,9 +25,9 @@ db = client[DATABASE_NAME]
 instance = Instance.from_db(db)
 
 #secondary db
-client2 = AsyncIOMotorClient(DATABASE_URI2)
-db2 = client2[DATABASE_NAME]
-instance2 = Instance.from_db(db2)
+client2 = AsyncIOMotorClient(DATABASE_URI2) if DATABASE_URI2 else None
+db2 = client2[DATABASE_NAME] if client2 else None
+instance2 = Instance.from_db(db2) if db2 else None
 
 
 # Primary DB Model
@@ -300,8 +300,9 @@ async def send_msg(bot, filename, caption):
             else:              
                 await bot.send_message(chat_id=MOVIE_UPDATE_CHANNEL, text=text, reply_markup=InlineKeyboardMarkup(btn))
 
-    except:
-        pass
+    except Exception as e:
+        from errors import log_exception
+        log_exception(logger, e, context="send_msg", filename=filename)
 
 async def get_qualities(text, qualities: list):
     """Get all Quality from text"""

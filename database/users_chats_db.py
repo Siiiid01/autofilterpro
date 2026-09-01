@@ -5,24 +5,24 @@ import pytz
 from pymongo.errors import DuplicateKeyError
 from pymongo import MongoClient, ReturnDocument
 
-my_client = MongoClient(DATABASE_URI)
-mydb = my_client["filename"]
+async_client = motor.motor_asyncio.AsyncIOMotorClient(DATABASE_URI)
+mydb = async_client["filename"]
 
 async def add_name(user_id, filename):
     user_db = mydb[str(user_id)]
     user = {'_id': filename}
-    existing_user = user_db.find_one({'_id': filename})
+    existing_user = await user_db.find_one({'_id': filename})
     if existing_user is not None:
         return False
     try:
-        user_db.insert_one(user)
+        await user_db.insert_one(user)
         return True
     except DuplicateKeyError:
         return False
       
 async def delete_all_msg(user_id):
     user_db = mydb[str(user_id)]
-    user_db.delete_many({})
+    await user_db.delete_many({})
 
 
 class Database:
@@ -32,7 +32,7 @@ class Database:
         self.db = self._client[database_name]
         self.col = self.db.users
         self.grp = self.db.groups
-        self.users = self.db.uersz
+        self.users = self.db.users
         self.req = self.db.requests
         self.botcol = self.db["deendayal"]  
         self.bot_id_col = self.db["bot_id"]
@@ -152,7 +152,7 @@ class Database:
             ban_reason=ban_reason
         )
         if duration_hours is not None:
-            ban_status['banned_until'] = datetime.datetime.utcnow() + datetime.timedelta(hours=duration_hours)
+            ban_status['banned_until'] = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=duration_hours)
         await self.col.update_one({'id': user_id}, {'$set': {'ban_status': ban_status}})
         return ban_status
 
@@ -166,7 +166,7 @@ class Database:
             return default
         ban_status = user.get('ban_status', default)
         banned_until = ban_status.get('banned_until')
-        if ban_status.get('is_banned') and banned_until and banned_until <= datetime.datetime.utcnow():
+        if ban_status.get('is_banned') and banned_until and banned_until.replace(tzinfo=datetime.timezone.utc) <= datetime.datetime.now(datetime.timezone.utc):
             await self.remove_ban(int(id))
             return default
         return ban_status
@@ -177,7 +177,7 @@ class Database:
             {'id': int(user_id)},
             {
                 '$inc': {'shortlink_bypass.warnings': 1},
-                '$set': {'shortlink_bypass.last_detected_at': datetime.datetime.utcnow()},
+                '$set': {'shortlink_bypass.last_detected_at': datetime.datetime.now(datetime.timezone.utc)},
             },
             return_document=ReturnDocument.AFTER,
         )
@@ -185,7 +185,7 @@ class Database:
 
     async def expire_temporary_bans(self):
         """Remove expired shortlink-bypass bans and return the affected user IDs."""
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.timezone.utc)
         query = {
             'ban_status.is_banned': True,
             'ban_status.banned_until': {'$exists': True, '$ne': None, '$lte': now},
@@ -357,4 +357,4 @@ class Database:
 
         
 db = Database(DATABASE_URI, DATABASE_NAME)
-db2 = Database(DATABASE_URI2, DATABASE_NAME)
+db2 = Database(DATABASE_URI2, DATABASE_NAME) if DATABASE_URI2 else None

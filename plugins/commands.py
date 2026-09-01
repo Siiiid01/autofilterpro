@@ -10,7 +10,7 @@ import pytz
 from database.verify_db import vr_db
 from .pmfilter import auto_filter 
 from Script import script
-from datetime import datetime
+from datetime import datetime, timedelta
 from database.refer import referdb
 from database.config_db import mdb
 from pyrogram import Client, filters, enums
@@ -23,20 +23,11 @@ from utils import *
 from database.connections_mdb import active_connection
 
 # Set up logging
-logging.basicConfig(level=logging.ERROR)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 TIMEZONE = "Asia/Kolkata"
 BATCH_FILES = {}
-
-async def _delete_after(delay: int, *msgs):
-    """Non-blocking helper: delete one or more messages after `delay` seconds."""
-    await asyncio.sleep(delay)
-    for m in msgs:
-        try:
-            await m.delete()
-        except Exception:
-            pass
 
 async def _delete_after(delay: int, *msgs):
     """Non-blocking helper: delete one or more messages after `delay` seconds."""
@@ -115,7 +106,11 @@ async def start(client, message):
         if channels:  
             btn = await is_subscribed(client, message, channels)
             if btn:
-                kk, file_id = message.command[1].split("_", 1)
+                try:
+                    kk, file_id = message.command[1].split("_", 1)
+                except ValueError:
+                    logger.warning(f"Invalid start payload (no underscore): {message.command[1]}")
+                    return
                 btn.append([InlineKeyboardButton("ᴛʀʏ ᴀɢᴀɪɴ", callback_data=f"checksub#{kk}#{file_id}")])
                 reply_markup = InlineKeyboardMarkup(btn)
                 caption = (
@@ -191,10 +186,10 @@ async def start(client, message):
         if fromuse == 100:
             referdb.add_refer_points(user_id, 0) 
             await message.reply_text(f"🎉 𝗖𝗼𝗻𝗴𝗿𝗮𝘁𝘂𝗹𝗮𝘁𝗶𝗼𝗻𝘀! 𝗬𝗼𝘂 𝘄𝗼𝗻 𝟭𝟬 𝗥𝗲𝗳𝗲𝗿𝗿𝗮𝗹 𝗽𝗼𝗶𝗻𝘁 𝗯𝗲𝗰𝗮𝘂𝘀𝗲 𝗬𝗼𝘂 𝗵𝗮𝘃𝗲 𝗯𝗲𝗲𝗻 𝗦𝘂𝗰𝗰𝗲𝘀𝘀𝗳𝘂𝗹𝗹𝘆 𝗜𝗻𝘃𝗶𝘁𝗲𝗱 ☞ {uss.mention}!")		    
-            await message.reply_text(user_id, f"You have been successfully invited by {message.from_user.mention}!") 	
+            await client.send_message(chat_id=int(user_id), text=f"You have been successfully invited by {message.from_user.mention}!")
             seconds = 2592000
             if seconds > 0:
-                expiry_time = datetime.datetime.now() + datetime.timedelta(seconds=seconds)
+                expiry_time = datetime.now() + timedelta(seconds=seconds)
                 user_data = {"id": user_id, "expiry_time": expiry_time}  # Using "id" instead of "user_id"  
                 await db.update_user(user_data)  # Use the update_user method to update or insert user data		    
                 await client.send_message(

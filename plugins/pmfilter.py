@@ -37,13 +37,11 @@ from urllib.parse import quote_plus
 from LucyBot.util.file_properties import get_name, get_hash, get_media_file_size
 from database.config_db import mdb
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)
+logger.setLevel(logging.WARNING)
 
 import requests
 import string
-import tracemalloc
 
-tracemalloc.start()
 
 
 TIMEZONE = "Asia/Kolkata"

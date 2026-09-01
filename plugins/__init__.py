@@ -1,10 +1,13 @@
 
+import logging
 from aiohttp import web
 from .route import routes
 from asyncio import sleep 
 from datetime import datetime
 from database.users_chats_db import db
 from info import LOG_CHANNEL
+
+logger = logging.getLogger(__name__)
 
 async def web_server():
     web_app = web.Application(client_max_size=30000000)
@@ -25,7 +28,7 @@ async def check_expired_premium(client):
                 )
                 await client.send_message(LOG_CHANNEL, text=f"<b>#Premium_Expire\n\nUser name: {user.mention}\nUser id: <code>{user_id}</code>")
             except Exception as e:
-                print(e)
+                logger.exception(f"Premium expiry notification error for user {user_id}: {e}")
             await sleep(0.5)
         await sleep(1)
 
