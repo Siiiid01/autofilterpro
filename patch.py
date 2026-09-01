@@ -5,19 +5,60 @@ from info import DELETE_TIME
 
 logger = logging.getLogger(__name__)
 
-def is_index_msg(bot_msg):
-    text = getattr(bot_msg, 'text', '') or getattr(bot_msg, 'caption', '') or ''
-    text_lower = text.lower()
-    if 'index' in text_lower or 'messages fetched' in text_lower:
+# ─────────────────────────────────────────────────────────────────────────────
+# WHITELIST — messages that must NEVER be auto-deleted by this patch.
+# ─────────────────────────────────────────────────────────────────────────────
+_WHITELIST_TEXT = [
+    # indexing
+    "index", "messages fetched", "starting indexing", "successfully saved",
+    "successfully cancelled",
+    # search results / file listing
+    "searching", "files found", "sᴇᴀʀᴄʜ", "select option", "send all",
+    # batch/link delivery
+    "please wait", "generating link", "here is your link", "contains",
+    "batch", "dstore",
+    # file delivery warning (commands.py manages its own deletion via _delete_after)
+    "important", "will be deleted", "forward this file",
+    # verification prompt shown to user
+    "not verified", "verify", "verification",
+    # admin messages
+    "do you want to index",
+]
+
+_WHITELIST_CALLBACKS = [
+    "index", "index_cancel", "file#", "filep#", "next_", "prev_",
+    "sendfiles", "qualities", "languages", "seasons", "checksub",
+    "generate_stream_link", "pages", "reqinfo", "delfile",
+]
+
+
+def _should_skip(bot_msg) -> bool:
+    """Return True if this message should NOT be auto-deleted by the patch."""
+    if bot_msg is None:
         return True
-    
+
+    text = (getattr(bot_msg, 'text', '') or
+            getattr(bot_msg, 'caption', '') or '').lower()
+
+    for keyword in _WHITELIST_TEXT:
+        if keyword in text:
+            return True
+
     markup = getattr(bot_msg, 'reply_markup', None)
     if markup and hasattr(markup, 'inline_keyboard'):
         for row in markup.inline_keyboard:
             for btn in row:
-                if getattr(btn, 'callback_data', None) and 'index' in btn.callback_data:
-                    return True
+                cb = getattr(btn, 'callback_data', '') or ''
+                for kw in _WHITELIST_CALLBACKS:
+                    if kw in cb:
+                        return True
+                btn_text = (getattr(btn, 'text', '') or '').lower()
+                for keyword in _WHITELIST_TEXT:
+                    if keyword in btn_text:
+                        return True
+
     return False
+
 
 # Keep original methods
 _orig_reply_text = Message.reply_text
@@ -33,7 +74,7 @@ async def _auto_delete_task(bot_msg, delay):
     await asyncio.sleep(delay)
     try:
         await bot_msg.delete()
-    except Exception as e:
+    except Exception:
         pass
 
 from pyrogram.enums import ChatType
@@ -43,7 +84,7 @@ def _wrap_reply(original_func):
     async def wrapped_reply(self, *args, **kwargs):
         # 1. Call the original reply method
         bot_msg = await original_func(self, *args, **kwargs)
-        
+
         # 2. Delete the user's command/message only in PM
         try:
             if hasattr(self, "chat") and self.chat and getattr(self.chat, "type", None) == ChatType.PRIVATE:
@@ -51,57 +92,48 @@ def _wrap_reply(original_func):
         except Exception:
             pass
 
-        # 3. Determine the auto-delete delay
-        # If it's a verification message (checking text or reply_markup)
+        # 3. Skip auto-delete for whitelisted messages
+        if _should_skip(bot_msg):
+            return bot_msg
+
+        # 4. Verification messages get a longer window (5 min)
         is_verify = False
-        
-        # Check text
-        text = getattr(bot_msg, 'text', '') or getattr(bot_msg, 'caption', '') or ''
-        if text and ('verify' in text.lower() or 'verification' in text.lower()):
-            is_verify = True
-            
-        # Check buttons
         markup = getattr(bot_msg, 'reply_markup', None)
         if markup and hasattr(markup, 'inline_keyboard'):
             for row in markup.inline_keyboard:
                 for btn in row:
-                    if btn.text and ('verify' in btn.text.lower() or 'verification' in btn.text.lower() or 'ᴠᴇʀɪғʏ' in btn.text):
+                    btn_text = (getattr(btn, 'text', '') or '').lower()
+                    if 'ᴠᴇʀɪғʏ' in btn_text or 'verify' in btn_text:
                         is_verify = True
 
-        # Use 300 seconds (5 min) for verify prompts, else default DELETE_TIME
         delay = 300 if is_verify else DELETE_TIME
-        
-        # 4. Spawn background task to delete bot's reply
-        if bot_msg and not is_index_msg(bot_msg):
-            asyncio.create_task(_auto_delete_task(bot_msg, delay))
-            
+        asyncio.create_task(_auto_delete_task(bot_msg, delay))
         return bot_msg
-        
+
     return wrapped_reply
 
 def _wrap_client_send(original_func):
     async def wrapped_send(self, *args, **kwargs):
         bot_msg = await original_func(self, *args, **kwargs)
-        
+
+        # Skip auto-delete for whitelisted messages
+        if _should_skip(bot_msg):
+            return bot_msg
+
+        # Verification messages get a longer window
         is_verify = False
-        text = getattr(bot_msg, 'text', '') or getattr(bot_msg, 'caption', '') or ''
-        if text and ('verify' in text.lower() or 'verification' in text.lower()):
-            is_verify = True
-            
         markup = getattr(bot_msg, 'reply_markup', None)
         if markup and hasattr(markup, 'inline_keyboard'):
             for row in markup.inline_keyboard:
                 for btn in row:
-                    if btn.text and ('verify' in btn.text.lower() or 'verification' in btn.text.lower() or 'ᴠᴇʀɪғʏ' in btn.text):
+                    btn_text = (getattr(btn, 'text', '') or '').lower()
+                    if 'ᴠᴇʀɪғʏ' in btn_text or 'verify' in btn_text:
                         is_verify = True
 
         delay = 300 if is_verify else DELETE_TIME
-        
-        if bot_msg and not is_index_msg(bot_msg):
-            asyncio.create_task(_auto_delete_task(bot_msg, delay))
-            
+        asyncio.create_task(_auto_delete_task(bot_msg, delay))
         return bot_msg
-        
+
     return wrapped_send
 
 # Apply patches
