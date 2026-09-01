@@ -5,6 +5,20 @@ from info import DELETE_TIME
 
 logger = logging.getLogger(__name__)
 
+def is_index_msg(bot_msg):
+    text = getattr(bot_msg, 'text', '') or getattr(bot_msg, 'caption', '') or ''
+    text_lower = text.lower()
+    if 'index' in text_lower or 'messages fetched' in text_lower:
+        return True
+    
+    markup = getattr(bot_msg, 'reply_markup', None)
+    if markup and hasattr(markup, 'inline_keyboard'):
+        for row in markup.inline_keyboard:
+            for btn in row:
+                if getattr(btn, 'callback_data', None) and 'index' in btn.callback_data:
+                    return True
+    return False
+
 # Keep original methods
 _orig_reply_text = Message.reply_text
 _orig_reply_photo = Message.reply_photo
@@ -58,7 +72,7 @@ def _wrap_reply(original_func):
         delay = 300 if is_verify else DELETE_TIME
         
         # 4. Spawn background task to delete bot's reply
-        if bot_msg:
+        if bot_msg and not is_index_msg(bot_msg):
             asyncio.create_task(_auto_delete_task(bot_msg, delay))
             
         return bot_msg
@@ -83,7 +97,7 @@ def _wrap_client_send(original_func):
 
         delay = 300 if is_verify else DELETE_TIME
         
-        if bot_msg:
+        if bot_msg and not is_index_msg(bot_msg):
             asyncio.create_task(_auto_delete_task(bot_msg, delay))
             
         return bot_msg
