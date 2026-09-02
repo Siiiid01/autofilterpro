@@ -1,6 +1,7 @@
 import re
 import os
 from os import environ, getenv
+from urllib.parse import urlsplit
 from Script import script
 import random
 
@@ -180,7 +181,12 @@ if 'DYNO' in environ:
 else:
     ON_HEROKU = False
 BIND_ADRESS = str(getenv('WEB_SERVER_BIND_ADDRESS', '0.0.0.0'))
-FQDN = str(getenv('FQDN', BIND_ADRESS)) if not ON_HEROKU or getenv('FQDN') else APP_NAME+'.herokuapp.com'
+PUBLIC_HOST = getenv('FQDN') or getenv('KOYEB_PUBLIC_DOMAIN')
+if PUBLIC_HOST:
+    parsed_host = urlsplit(PUBLIC_HOST if '://' in PUBLIC_HOST else f'//{PUBLIC_HOST}')
+    FQDN = parsed_host.netloc or parsed_host.path
+else:
+    FQDN = BIND_ADRESS if not ON_HEROKU else APP_NAME+'.herokuapp.com'
 URL = "https://{}/".format(FQDN) if ON_HEROKU or NO_PORT else "https://{}:{}/".format(FQDN, PORT)
 SLEEP_THRESHOLD = int(environ.get('SLEEP_THRESHOLD', '60'))
 WORKERS = int(environ.get('WORKERS', '4'))
