@@ -40,7 +40,7 @@ async def verify_redirect_handler(request: web.Request):
             pass
     if not verify_link:
         raise web.HTTPNotFound(text="This verification link is invalid or has expired. Please request a new one from the bot.")
-    start_payload = f"verify-{verify_link['user_id']}-{token}-{verify_link['file_id']}"
+    start_payload = f"verify-{verify_link['user_id']}-{token}"
     raise web.HTTPFound(f"https://t.me/{temp.U_NAME}?{urlencode({'start': start_payload})}")
 
 

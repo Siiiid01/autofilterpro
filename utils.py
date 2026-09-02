@@ -782,6 +782,34 @@ def get_verify_expiry_str(userid):
         return f"{h12}:{m} {suffix} on {d}"
     except Exception:
         return ""
+
+def get_verify_remaining_str(userid):
+    uid = int(userid)
+    status = temp.VERIFY.get(uid)
+    if not status:
+        return ""
+    try:
+        timezone = pytz.timezone('Asia/Kolkata')
+        expiry = timezone.localize(datetime.strptime(
+            f"{status['date']} {status['time']}",
+            "%Y-%m-%d %H:%M:%S",
+        ))
+        remaining = int((expiry - datetime.now(timezone)).total_seconds())
+        if remaining <= 0:
+            return ""
+        days, remaining = divmod(remaining, 86400)
+        hours, remaining = divmod(remaining, 3600)
+        minutes, _ = divmod(remaining, 60)
+        parts = []
+        if days:
+            parts.append(f"{days}d")
+        if hours:
+            parts.append(f"{hours}h")
+        if minutes or not parts:
+            parts.append(f"{minutes}m")
+        return " ".join(parts)
+    except Exception:
+        return ""
             
 async def get_seconds(time_string):
     def extract_value_and_unit(ts):

@@ -66,6 +66,49 @@ async def _deliver_verified_file(client, user_id, file_id):
     )
     return True
 
+async def _send_verification_confirmation(message, expiry_line):
+    try:
+        await message.reply_photo(
+            photo=random.choice(PICS),
+            caption=(
+                f"<blockquote><b>👋 ʜᴇʏ {message.from_user.mention},\n\n"
+                f"ʏᴏᴜ'ʀᴇ ꜱᴜᴄᴄᴇssғᴜʟʟʏ ᴠᴇʀɪғɪᴇᴅ ✅\n\n"
+                f"ɴᴏᴡ ʏᴏᴜ'ᴠᴇ ᴜɴʟɪᴍɪᴛᴇᴅ ᴀᴄᴄᴇss ғᴏʀ {VERIFY_EXPIRE} ʜᴏᴜʀs 🎉"
+                f"{expiry_line}</b></blockquote>"
+            ),
+        )
+    except Exception:
+        logger.exception("Could not send verification confirmation for user_id=%s", message.from_user.id)
+        try:
+            await message.reply_text(
+                f"<b>Verified successfully for {VERIFY_EXPIRE} hours.</b>{expiry_line}",
+                protect_content=False,
+            )
+        except Exception:
+            logger.exception("Could not send verification confirmation for user_id=%s", message.from_user.id)
+
+@Client.on_message(filters.command("verify") & filters.incoming)
+async def verify_command(client, message):
+    user_id = message.from_user.id
+    if await db.has_premium_access(user_id):
+        return await message.reply_text("<b>You already have premium access.</b>")
+
+    if await check_verification(client, user_id):
+        remaining = get_verify_remaining_str(user_id)
+        return await message.reply_text(
+            f"<b>✅ You are already verified.</b>\n\n"
+            f"⏳ Remaining access: <code>{remaining or 'less than 1m'}</code>"
+        )
+
+    verification_url = await get_token(client, user_id, "", "")
+    buttons = [[InlineKeyboardButton("ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ᴠᴇʀɪғʏ", url=verification_url)]]
+    return await message.reply_text(
+        f"<b>‼️ You are not verified today.</b>\n\n"
+        f"Verify once to get access for {VERIFY_EXPIRE} hours.",
+        reply_markup=InlineKeyboardMarkup(buttons),
+        protect_content=False,
+    )
+
 @Client.on_message(filters.command("start") & filters.incoming)
 async def start(client, message):
     if EMOJI_MODE:    
@@ -141,26 +184,8 @@ async def start(client, message):
         channels = (await get_settings(int(message.from_user.id))).get('fsub')
         if channels:  
             btn = await is_subscribed(client, message, channels)
-            if btn:
-                try:
-                    kk, file_id = message.command[1].split("_", 1)
-                except ValueError:
-                    logger.warning(f"Invalid start payload (no underscore): {message.command[1]}")
-                    return
-                btn.append([InlineKeyboardButton("ᴛʀʏ ᴀɢᴀɪɴ", callback_data=f"checksub#{kk}#{file_id}")])
-                reply_markup = InlineKeyboardMarkup(btn)
-                caption = (
-                    f"**ᴊᴏɪɴ ᴏᴜʀ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ ᴀɴᴅ ᴛʜᴇɴ ᴄʟɪᴄᴋ ᴏɴ ᴛʀʏ ᴀɢᴀɪɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ʀᴇǫᴜᴇꜱᴛᴇᴅ ꜰɪʟᴇ.**"
-                )
-                await message.reply_photo(
-                    photo=random.choice(FSUB_PICS),
-                    caption=caption,
-                    reply_markup=reply_markup,
-                    parse_mode=enums.ParseMode.HTML
-                )
-                return
-       
-    if len(message.command) == 2 and message.command[1] in ["subscribe", "error", "okay", "help"]:
+            if not fileid:
+                await _send_verification_confirmation(message, expiry_line)
         buttons = [[
                     InlineKeyboardButton(text="🏡", callback_data="start"),
                     InlineKeyboardButton(text="🛡", callback_data="group_info"),
@@ -356,14 +381,34 @@ async def start(client, message):
     elif data.split("-", 1)[0] == "DSTORE":
         sts = await message.reply("<b>Please wait...</b>")
         b_string = data.split("-", 1)[1]
-        decoded = (base64.urlsafe_b64decode(b_string + "=" * (-len(b_string) % 4))).decode("ascii")
+        try:
+            decoded = (base64.urlsafe_b64decode(b_string + "=" * (-len(b_string) % 4))).decode("ascii")
+        except:
+            await sts.edit("<b>Unable to read this file link. Please generate a new link.</b>")
+            return
         try:
             f_msg_id, l_msg_id, f_chat_id, protect = decoded.split("_", 3)
-        except:
-            f_msg_id, l_msg_id, f_chat_id = decoded.split("_", 2)
-            protect = "/pbatch" if PROTECT_CONTENT else "batch"
+        except ValueError:
+            try:
+                f_msg_id, l_msg_id, f_chat_id = decoded.split("_", 2)
+                protect = "/pbatch" if PROTECT_CONTENT else "batch"
+            except ValueError:
+                await sts.edit("<b>Unable to read this file link. Please generate a new link.</b>")
+                return
         diff = int(l_msg_id) - int(f_msg_id)
-        async for msg in client.iter_messages(int(f_chat_id), int(l_msg_id), int(f_msg_id)):
+        sent_count = 0
+        iteration_failed = False
+
+        async def safe_iter_messages():
+            nonlocal iteration_failed
+            try:
+                async for stored_message in client.iter_messages(int(f_chat_id), int(l_msg_id), int(f_msg_id)):
+                    yield stored_message
+            except Exception:
+                iteration_failed = True
+                logger.exception("Could not read DSTORE source messages")
+
+        async for msg in safe_iter_messages():
             if msg.media:
                 media = getattr(msg, msg.media.value)
                 if BATCH_FILE_CAPTION:
@@ -378,9 +423,11 @@ async def start(client, message):
                     f_caption = getattr(msg, 'caption', file_name)
                 try:
                     await msg.copy(message.chat.id, caption=f_caption, protect_content=True if protect == "/pbatch" else False)
+                    sent_count += 1
                 except FloodWait as e:
                     await asyncio.sleep(e.x)
                     await msg.copy(message.chat.id, caption=f_caption, protect_content=True if protect == "/pbatch" else False)
+                    sent_count += 1
                 except Exception as e:
                     logger.exception(e)
                     continue
@@ -389,19 +436,34 @@ async def start(client, message):
             else:
                 try:
                     await msg.copy(message.chat.id, protect_content=True if protect == "/pbatch" else False)
+                    sent_count += 1
                 except FloodWait as e:
                     await asyncio.sleep(e.x)
                     await msg.copy(message.chat.id, protect_content=True if protect == "/pbatch" else False)
+                    sent_count += 1
                 except Exception as e:
                     logger.exception(e)
                     continue
             await asyncio.sleep(1) 
-        return await sts.delete()
+        if sent_count and not iteration_failed:
+            return await sts.delete()
+        await sts.edit(
+            "<b>Some files could not be sent from this link. Please generate a new link.</b>"
+            if sent_count else
+            "<b>No files could be sent from this link. Please generate a new link.</b>"
+        )
+        return
 
     elif data.split("-", 1)[0] == "verify":
-        userid = data.split("-", 2)[1]
-        token = data.split("-", 3)[2]
-        fileid = data.split("-", 3)[3]
+        verify_parts = data.split("-", 4)
+        if len(verify_parts) < 3:
+            return await message.reply_text(
+                text="<b>❌ Invalid or expired link!</b>",
+                protect_content=False
+            )
+        userid = verify_parts[1]
+        token = verify_parts[2]
+        fileid = verify_parts[3] if len(verify_parts) > 3 else None
         if str(message.from_user.id) != str(userid):
             return await message.reply_text(
                 text="<b>❌ Invalid or expired link!</b>",
@@ -409,6 +471,13 @@ async def start(client, message):
             )
         is_valid = await check_token(client, userid, token)
         if is_valid:
+            token_data = temp.VERIFY_LINKS.get(token)
+            if not token_data:
+                token_data = await db.get_verify_token(token)
+            if not fileid and token_data:
+                fileid = token_data.get('file_id')
+            if not fileid:
+                fileid = None
             if verified_too_quickly(userid, token):
                 await consume_verification_token(userid, token)
                 warning_number = await db.record_shortlink_bypass(userid)
@@ -459,7 +528,7 @@ async def start(client, message):
 
             try:
                 await message.reply_photo(
-                photo="https://i.ibb.co/FqxQgMHK/Purple-and-Pink-Certified-Overthinker-Typography-T-Shirt01.png",
+                photo=random.choice(PICS),
                 caption=(
                     f"<blockquote><b>👋 ʜᴇʏ {message.from_user.mention},\n\n"
                     f"ʏᴏᴜ'ʀᴇ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴠᴇʀɪꜰɪᴇᴅ ✅\n\n"
@@ -489,6 +558,9 @@ async def start(client, message):
                 await client.send_message(chat_id=VERIFIED_LOG, text=lucy_message)
             except Exception:
                 logger.exception("Could not write verification log for user_id=%s", userid)
+
+            if not fileid:
+                return
 
             # ── Auto-deliver the file immediately — no button click needed ──
             try:
@@ -667,14 +739,14 @@ async def start(client, message):
                     return
             if STREAM_MODE:
                 btn = [
-                    [InlineKeyboardButton('🚀 ꜰᴀꜱᴛ ᴅᴏᴡɴʟᴏᴀᴅ / ᴡᴀᴛᴄʜ ᴏɴʟɪɴᴇ 🖥️', callback_data=f'generate_stream_link:{file_id}')],
+                    [InlineKeyboardButton('🚀 ꜰᴀsᴛ ᴅᴏᴡɴʟᴏᴀᴅ / ᴡᴀᴛᴄʜ ᴏɴʟɪɴᴇ 🖥️', callback_data=f'generate_stream_link:{file_id}')],
                 ]
                 if MOVIE_UPDATE_CHANNEL_LNK:
-                    btn.append([InlineKeyboardButton('📌 ᴊᴏɪɴ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ 📌', url=MOVIE_UPDATE_CHANNEL_LNK)])
+                    btn.append([InlineKeyboardButton('📌 ᴊᴏɪɴ ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ 📌', url=MOVIE_UPDATE_CHANNEL_LNK)])
             else:
                 btn = []
                 if MOVIE_UPDATE_CHANNEL_LNK:
-                    btn.append([InlineKeyboardButton('📌 ᴊᴏɪɴ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ 📌', url=MOVIE_UPDATE_CHANNEL_LNK)])
+                    btn.append([InlineKeyboardButton('📌 ᴊᴏɪɴ ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ 📌', url=MOVIE_UPDATE_CHANNEL_LNK)])
 
             msg = await client.send_cached_media(
                 chat_id=message.from_user.id,
@@ -684,7 +756,7 @@ async def start(client, message):
                 reply_markup=InlineKeyboardMarkup(btn)
             )
             filesarr.append(msg)
-        k = await client.send_message(chat_id=message.from_user.id, text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nᴛʜɪꜱ ᴍᴏᴠɪᴇ ꜰɪʟᴇ/ᴠɪᴅᴇᴏ ᴡɪʟʟ ʙᴇ ᴅᴇʟᴇᴛᴇᴅ ɪɴ <b><u><code>{get_time(DELETE_TIME)}</code></u> 🫥 <i></b>(ᴅᴜᴇ ᴛᴏ ᴄᴏᴘʏʀɪɢʜᴛ ɪꜱꜱᴜᴇꜱ)</i>.\n\n<b><i>ᴘʟᴇᴀꜱᴇ ꜰᴏʀᴡᴀʀᴅ ᴛʜɪꜱ ꜰɪʟᴇ ᴛᴏ ꜱᴏᴍᴇᴡʜᴇʀᴇ ᴇʟꜱᴇ ᴀɴᴅ ꜱᴛᴀʀᴛ ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ ᴛʜᴇʀᴇ</i></b>")
+        k = await client.send_message(chat_id=message.from_user.id, text=f"<b><u>❗️❗️❗️IMPORTANT❗️️❗️❗️</u></b>\n\nᴛʜɪs ғɪʟᴇ ᴡɪʟʟ ʙᴇ ᴅᴇʟᴇᴛᴇᴅ ɪɴ <code>{get_time(DELETE_TIME)}</code> 🫥\n\n<b><i>ᴘʟᴇᴀsᴇ ғᴏʀᴡᴀʀᴅ ᴛʜɪs ғɪʟᴇ ᴛᴏ sᴏᴍᴇᴡʜᴇʀᴇ ᴇʟsᴇ</i></b>")
         asyncio.create_task(_delete_after(DELETE_TIME, *filesarr, k))
         return
     elif data.startswith("files"):
