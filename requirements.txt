@@ -51,8 +51,8 @@ qrcode
 textblob
 langdetect 
 
-# Git-based Packages
-git+https://github.com/Joelkb/cinemagoer
+# IMDb metadata
+cinemagoer
 
 # Other Tools
 apscheduler
