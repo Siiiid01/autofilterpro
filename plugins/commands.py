@@ -101,7 +101,15 @@ async def start(client, message):
         )
         return
     
-    if not await db.has_premium_access(message.from_user.id):
+    # A verification deep-link is issued only after the user has already reached
+    # this point once. Do not run verify-... through the force-subscription
+    # payload parser: it expects an underscore payload and used to discard free
+    # users' verification links before the handler below could run.
+    is_verification_link = (
+        len(message.command) == 2
+        and message.command[1].startswith("verify-")
+    )
+    if not is_verification_link and not await db.has_premium_access(message.from_user.id):
         channels = (await get_settings(int(message.from_user.id))).get('fsub')
         if channels:  
             btn = await is_subscribed(client, message, channels)
@@ -374,7 +382,7 @@ async def start(client, message):
         is_valid = await check_token(client, userid, token)
         if is_valid:
             if verified_too_quickly(userid, token):
-                consume_verification_token(userid, token)
+                await consume_verification_token(userid, token)
                 warning_number = await db.record_shortlink_bypass(userid)
                 if warning_number == 1:
                     return await message.reply_text(
@@ -401,14 +409,28 @@ async def start(client, message):
                 )
 
             # ── Mark user as verified FIRST so same-session file delivery works ──
-            await verify_user(client, userid, token)
-            await vr_db.save_verification(message.from_user.id)
+            # Save the user-facing status before any optional photo, stats, or
+            # log channel work. Those integrations must not block free users.
+            try:
+                await verify_user(client, userid, token)
+            except Exception:
+                logger.exception("Could not save verification status for user_id=%s", userid)
+                return await message.reply_text(
+                    text="<b>Verification could not be saved. Please try again shortly.</b>",
+                    protect_content=False,
+                )
+
+            try:
+                await vr_db.save_verification(message.from_user.id)
+            except Exception:
+                logger.exception("Could not record verification statistics for user_id=%s", userid)
 
             # Build human-readable expiry string
             expiry_str = get_verify_expiry_str(userid)
             expiry_line = f"\n\n⏳ <b>Verified until:</b> <code>{expiry_str}</code>" if expiry_str else ""
 
-            await message.reply_photo(
+            try:
+                await message.reply_photo(
                 photo="https://i.ibb.co/FqxQgMHK/Purple-and-Pink-Certified-Overthinker-Typography-T-Shirt01.png",
                 caption=(
                     f"<blockquote><b>👋 ʜᴇʏ {message.from_user.mention},\n\n"
@@ -416,7 +438,16 @@ async def start(client, message):
                     f"ɴᴏᴡ ʏᴏᴜ'ᴠᴇ ᴜɴʟɪᴍɪᴛᴇᴅ ᴀᴄᴄᴇꜱꜱ ꜰᴏʀ {VERIFY_EXPIRE} ʜᴏᴜʀꜱ 🎉"
                     f"{expiry_line}</b></blockquote>"
                 ),
-            )
+                )
+            except Exception:
+                logger.exception("Could not send verification photo for user_id=%s", userid)
+                try:
+                    await message.reply_text(
+                        f"<b>Verified successfully for {VERIFY_EXPIRE} hours.</b>{expiry_line}",
+                        protect_content=False,
+                    )
+                except Exception:
+                    logger.exception("Could not send verification confirmation for user_id=%s", userid)
 
             # Log the verification
             now = datetime.now()
@@ -426,7 +457,10 @@ async def start(client, message):
                 f"Date: {now.strftime('%Y-%m-%d')}\n"
                 f"#verify_completed"
             )
-            await client.send_message(chat_id=VERIFIED_LOG, text=lucy_message)
+            try:
+                await client.send_message(chat_id=VERIFIED_LOG, text=lucy_message)
+            except Exception:
+                logger.exception("Could not write verification log for user_id=%s", userid)
 
             # ── Auto-deliver the file immediately — no button click needed ──
             try:

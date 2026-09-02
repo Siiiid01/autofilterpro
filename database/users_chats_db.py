@@ -89,6 +89,29 @@ class Database:
         """Remove a consumed or invalidated token from MongoDB."""
         await self.verify_tokens.delete_one({'_id': token})
 
+    async def delete_verify_tokens_for_user(self, user_id: int):
+        """Keep only one active verification link per user."""
+        await self.verify_tokens.delete_many({'user_id': int(user_id)})
+
+    async def get_verify_token(self, token: str):
+        """Return one active verification token without loading the full collection."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        doc = await self.verify_tokens.find_one({
+            '_id': token,
+            'expires_at': {'$gt': now},
+        })
+        if not doc:
+            return None
+
+        issued = doc['issued_at']
+        if issued.tzinfo is None:
+            issued = issued.replace(tzinfo=datetime.timezone.utc)
+        return {
+            'user_id': int(doc['user_id']),
+            'file_id': str(doc['file_id']),
+            'issued_at': issued,
+        }
+
     async def load_all_verify_tokens(self) -> dict:
         """Load all non-expired tokens from MongoDB into memory on startup."""
         now = datetime.datetime.now(datetime.timezone.utc)

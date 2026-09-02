@@ -599,15 +599,34 @@ async def check_token(bot, userid, token):
     if not await db.is_user_exist(user.id):
         await db.add_user(user.id, user.first_name)
         await bot.send_message(LOG_CHANNEL, script.LOG_TEXT_P.format(user.id, user.mention))
-    if uid in TOKENS:
-        TKN = TOKENS[uid]
-        if token in TKN:
-            is_used = TKN[token]
-            if is_used == True:
-                return False
-            else:
-                return True
-    return False
+
+    # TOKENS is only an in-memory convenience cache. The web route can survive
+    # a restart because tokens are persisted in MongoDB, so this check must use
+    # the same source of truth instead of rejecting every post-restart link.
+    token_data = temp.VERIFY_LINKS.get(token)
+    if not token_data:
+        token_data = await db.get_verify_token(token)
+        if token_data:
+            temp.VERIFY_LINKS[token] = token_data
+
+    if not token_data or token_data.get('user_id') != uid:
+        return False
+
+    issued_at = token_data.get('issued_at')
+    if issued_at and issued_at.tzinfo is None:
+        issued_at = pytz.UTC.localize(issued_at)
+    if not issued_at or datetime.now(pytz.UTC) >= issued_at + timedelta(hours=VERIFY_EXPIRE + 1):
+        temp.VERIFY_LINKS.pop(token, None)
+        await db.delete_verify_token(token)
+        return False
+
+    if TOKENS.get(uid, {}).get(token) is True:
+        return False
+
+    # Rehydrate the cache after a restart; it remains pending until verify_user
+    # consumes it.
+    TOKENS.setdefault(uid, {})[token] = False
+    return True
 
 async def get_token(bot, userid, _link, fileid):
     uid = int(userid)
@@ -615,10 +634,14 @@ async def get_token(bot, userid, _link, fileid):
     if not await db.is_user_exist(user.id):
         await db.add_user(user.id, user.first_name)
         await bot.send_message(LOG_CHANNEL, script.LOG_TEXT_P.format(user.id, user.mention))
-    # Invalidate any old pending token for this user
+    # Invalidate every old pending token for this user, including tokens created
+    # before a restart and therefore absent from the local TOKENS cache.
     for old_token in list(TOKENS.get(uid, {}).keys()):
         temp.VERIFY_LINKS.pop(old_token, None)
-        await db.delete_verify_token(old_token)
+    for old_token, old_token_data in list(temp.VERIFY_LINKS.items()):
+        if old_token_data.get('user_id') == uid:
+            temp.VERIFY_LINKS.pop(old_token, None)
+    await db.delete_verify_tokens_for_user(uid)
 
     token = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
     TOKENS[uid] = {token: False}
@@ -648,12 +671,13 @@ def verified_too_quickly(userid, token):
     elapsed = (datetime.now(pytz.UTC) - issued).total_seconds()
     return elapsed < VERIFY_MINIMUM_SECONDS
 
-def consume_verification_token(userid, token):
+async def consume_verification_token(userid, token):
     """Prevent a rejected verification link from being reused."""
     uid = int(userid)
     if uid in TOKENS and token in TOKENS[uid]:
         TOKENS[uid][token] = True
     temp.VERIFY_LINKS.pop(token, None)
+    await db.delete_verify_token(token)
 
 async def get_verify_status(userid):
     uid = int(userid)

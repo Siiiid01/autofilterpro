@@ -159,14 +159,14 @@ async def re_enable_chat(bot, message):
 async def get_ststs(bot, message):
     if message.from_user.id not in ADMINS:
         # For non-admins, show sticker and delete
-        # m = await message.reply_sticker("CAACAgUAAxkBAAENwX1nqY2wtMmpwC8nVNR4Fsknd_nHfwACLggAAqNaIFSTNRxwL22HDzYE")
+        m = await message.reply_sticker("CAACAgUAAxkBAAENwX1nqY2wtMmpwC8nVNR4Fsknd_nHfwACLggAAqNaIFSTNRxwL22HDzYE")
         # await asyncio.sleep(10)  # Wait for 10 seconds
-        # await m.delete()
+        await m.delete()
         return
         
     try:
         # For admins, show loading sticker first
-        # status = await message.reply_sticker("CAACAgIAAxkBAAEOEGFn0Vo1dhWHq37XzE_neCUx9VBKUQACFBIAAto4aUh6lAJQnkvJtTYE")
+        status = await message.reply_sticker("CAACAgIAAxkBAAEOEGFn0Vo1dhWHq37XzE_neCUx9VBKUQACFBIAAto4aUh6lAJQnkvJtTYE")
         
         # Get stats
         total_users = await db.total_users_count()

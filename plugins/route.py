@@ -33,7 +33,7 @@ async def verify_redirect_handler(request: web.Request):
     # DB fallback: token may have been issued before last restart
     if not verify_link:
         try:
-            verify_link = (await userdb.load_all_verify_tokens()).get(token)
+            verify_link = await userdb.get_verify_token(token)
             if verify_link:
                 temp.VERIFY_LINKS[token] = verify_link  # re-populate cache
         except Exception:
@@ -52,7 +52,7 @@ async def verify_landing_handler(request: web.Request):
     # DB fallback: re-populate cache if bot restarted
     if not verify_link:
         try:
-            verify_link = (await userdb.load_all_verify_tokens()).get(token)
+            verify_link = await userdb.get_verify_token(token)
             if verify_link:
                 temp.VERIFY_LINKS[token] = verify_link
         except Exception:

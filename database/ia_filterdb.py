@@ -73,7 +73,8 @@ async def save_file(bot, media):
   """Save file in database"""
   global saveMedia
   file_id, file_ref = unpack_new_file_id(media.file_id)
-  file_name = re.sub(r"(_|\-|\.|\+)", " ", str(media.file_name))
+  file_name = getattr(media, "file_name", "Photo")
+  file_name = re.sub(r"(_|\-|\.|\+)", " ", str(file_name))
   try:
     if saveMedia == Media2: 
         if await Media.count_documents({'file_id': file_id}, limit=1):
@@ -83,10 +84,10 @@ async def save_file(bot, media):
         file_id=file_id,
         file_ref=file_ref,
         file_name=file_name,
-        file_size=media.file_size,
+        file_size=getattr(media, "file_size", 0),
         file_type=media.file_type,
-        mime_type=media.mime_type,
-        caption=media.caption.html if media.caption else None,
+        mime_type=getattr(media, "mime_type", "image/jpeg"),
+        caption=media.caption.html if getattr(media, "caption", None) else None,
     )
   except ValidationError:
     logger.exception('Error occurred while saving file in database')
