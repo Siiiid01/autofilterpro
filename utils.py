@@ -517,6 +517,8 @@ async def get_shortlink(chat_id, link):
     if URL.startswith("shorturllink") or URL.startswith("terabox.in") or URL.startswith("urlshorten.in"):
         URL = SHORTLINK_URL
         API = SHORTLINK_API
+        
+    short_link = link
     if URL == "api.shareus.io":
         url = f'https://{URL}/easy_api'
         params = {
@@ -527,14 +529,23 @@ async def get_shortlink(chat_id, link):
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params, raise_for_status=True, ssl=False) as response:
                     data = await response.text()
-                    return data
+                    short_link = data
         except Exception as e:
             logger.error(e)
-            return link
     else:
         shortzy = Shortzy(api_key=API, base_site=URL)
-        link = await shortzy.convert(link)
+        try:
+            short_link = await shortzy.convert(link)
+        except Exception as e:
+            logger.error(e)
+            
+    if short_link == link:
         return link
+        
+    import base64
+    from info import URL as fqdn_url
+    encoded = base64.urlsafe_b64encode(short_link.encode("utf-8")).decode("utf-8").rstrip("=")
+    return f"{fqdn_url.rstrip('/')}/sl/{encoded}"
     
 async def get_tutorial(chat_id):
     settings = await get_settings(chat_id) #fetching settings for group
