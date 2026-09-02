@@ -1104,25 +1104,62 @@ async def cb_handler(client: Client, query: CallbackQuery):
             f_caption = f"{files.file_name}"
 
         try:
-            if settings['is_shortlink'] and not pre_user:
-                if clicked == query.from_user.id:
-                    temp.SHORT[clicked] = query.message.chat.id
-                    await query.answer(url=f"https://telegram.me/{temp.U_NAME}?start=short_{file_id}")
-                    return
-                else:
-                    await query.answer(f"Hᴇʏ {query.from_user.first_name},\nTʜɪs Is Nᴏᴛ Yᴏᴜʀ Mᴏᴠɪᴇ Rᴇǫᴜᴇsᴛ.\nRᴇǫᴜᴇsᴛ Yᴏᴜʀ's !", show_alert=True)
-            else:
-                if clicked == query.from_user.id:
-                    await query.answer(url=f"https://telegram.me/{temp.U_NAME}?start={ident}_{file_id}")
-                    return
-                else:
-                    await query.answer(f"Hᴇʏ {query.from_user.first_name},\nTʜɪs Is Nᴏᴛ Yᴏᴜʀ Mᴏᴠɪᴇ Rᴇǫᴜᴇsᴛ.\nRᴇǫᴜᴇsᴛ Yᴏᴜʀ's !", show_alert=True)
+            if clicked != query.from_user.id:
+                return await query.answer(
+                    f"Hᴇʏ {query.from_user.first_name},\nTʜɪs Is Nᴏᴛ Yᴏᴜʀ Mᴏᴠɪᴇ Rᴇǫᴜᴇsᴛ.\nRᴇǫᴜᴇsᴛ Yᴏᴜʀ's !",
+                    show_alert=True
+                )
+
+            await query.answer()
+
+            if settings.get('is_shortlink') and not pre_user:
+                temp.SHORT[clicked] = query.message.chat.id
+                short_url = await get_shortlink(
+                    query.message.chat.id,
+                    f"https://telegram.me/{temp.U_NAME}?start=file_{file_id}"
+                )
+                await client.send_message(
+                    chat_id=clicked,
+                    text=(
+                        f"✅ ʏᴏᴜʀ ʟɪɴᴋ ɪs ʀᴇᴀᴅʏ\n\n"
+                        f"⚠️ ꜰɪʟᴇ ɴᴀᴍᴇ: <code>{files.file_name}</code>\n"
+                        f"📥 ꜰɪʟᴇ sɪᴢᴇ: <code>{size}</code>"
+                    ),
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("📁 ᴅᴏᴡɴʟᴏᴀᴅ", url=short_url)
+                    ]])
+                )
+                return
+
+            if not pre_user and VERIFY and not await check_verification(client, clicked):
+                verification_url = await get_token(
+                    client,
+                    clicked,
+                    f"https://telegram.me/{temp.U_NAME}?start=",
+                    file_id
+                )
+                await client.send_message(
+                    chat_id=clicked,
+                    text="‼️ ʏᴏᴜ ᴀʀᴇ ɴᴏᴛ ᴠᴇʀɪꜰɪᴇᴅ. ᴘʟᴇᴀsᴇ ᴠᴇʀɪꜰʏ ᴛᴏ ɢᴇᴛ ᴛʜɪs ғɪʟᴇ.",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ᴠᴇʀɪғʏ", url=verification_url)
+                    ]])
+                )
+                return
+
+            await client.send_cached_media(
+                chat_id=clicked,
+                file_id=files.file_id,
+                caption=f_caption,
+                protect_content=ident == "filep",
+            )
         except UserIsBlocked:
             await query.answer('Uɴʙʟᴏᴄᴋ ᴛʜᴇ ʙᴏᴛ ᴍᴀʜɴ !', show_alert=True)
         except PeerIdInvalid:
-            await query.answer(url=f"https://telegram.me/{temp.U_NAME}?start={ident}_{file_id}")
+            await query.answer('Pʟᴇᴀsᴇ sᴛᴀʀᴛ ᴛʜᴇ ʙᴏᴛ ғɪʀsᴛ.', show_alert=True)
         except Exception as e:
-            await query.answer(url=f"https://telegram.me/{temp.U_NAME}?start={ident}_{file_id}")
+            logger.exception("File button handling failed for file_id=%s", file_id)
+            await query.answer('Unable to fetch this file right now. Please try again.', show_alert=True)
   
     elif query.data.startswith("sendfiles"):
         clicked = query.from_user.id
