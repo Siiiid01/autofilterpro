@@ -38,6 +38,34 @@ async def _delete_after(delay: int, *msgs):
         except Exception:
             pass
 
+async def _deliver_verified_file(client, user_id, file_id):
+    files = await get_file_details(file_id)
+    if not files:
+        return False
+    file = files[0]
+    title = ' '.join(filter(
+        lambda value: not value.startswith('[') and not value.startswith('@') and not value.startswith('www.'),
+        file.file_name.split()
+    ))
+    size = get_size(file.file_size)
+    caption = file.caption
+    if CUSTOM_FILE_CAPTION:
+        try:
+            caption = CUSTOM_FILE_CAPTION.format(
+                file_name=title,
+                file_size=size,
+                file_caption='' if caption is None else caption,
+            )
+        except Exception:
+            pass
+    await client.send_cached_media(
+        chat_id=user_id,
+        file_id=file.file_id,
+        caption=caption or title,
+        protect_content=False,
+    )
+    return True
+
 @Client.on_message(filters.command("start") & filters.incoming)
 async def start(client, message):
     if EMOJI_MODE:    
@@ -578,8 +606,9 @@ async def start(client, message):
         else:
             gtxt = "ɢᴏᴏᴅ ɴɪɢʜᴛ 👋"        
         user_id = message.from_user.id
-        if await db.has_premium_access(message.from_user.id):
-            pass
+        if await db.has_premium_access(user_id) or await check_verification(client, user_id):
+            if await _deliver_verified_file(client, user_id, file_id):
+                return
         else:
             chat_id = temp.SHORT.get(user_id)
             files_ = await get_file_details(file_id)
@@ -670,12 +699,9 @@ async def start(client, message):
         else:
             gtxt = "ɢᴏᴏᴅ ɴɪɢʜᴛ  👋"     
         user_id = message.from_user.id
-        if temp.SHORT.get(user_id)==None:
-            return await message.reply_text(text="<b>Please Search Again in Group</b>")
-        else:
-            chat_id = temp.SHORT.get(user_id)
-        settings = await get_settings(chat_id)
-        if not await db.has_premium_access(user_id) and settings['is_shortlink']: #Don't change anything without my permission @cosmic_freak
+        chat_id = temp.SHORT.get(user_id)
+        settings = await get_settings(chat_id) if chat_id else {}
+        if not await db.has_premium_access(user_id) and settings.get('is_shortlink', False): #Don't change anything without my permission @cosmic_freak
             files_ = await get_file_details(file_id)
             files = files_[0]
             g = await get_shortlink(chat_id, f"https://telegram.me/{temp.U_NAME}?start=file_{file_id}")

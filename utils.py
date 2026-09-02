@@ -539,9 +539,6 @@ async def get_shortlink(chat_id, link):
         except Exception as e:
             logger.error(e)
             
-    if short_link == link:
-        return link
-        
     import base64
     from info import URL as fqdn_url
     encoded = base64.urlsafe_b64encode(short_link.encode("utf-8")).decode("utf-8").rstrip("=")
@@ -577,14 +574,14 @@ async def get_verify_shorted_link(link):
                 async with session.get(url, params=params, raise_for_status=True, ssl=False) as response:
                     data = await response.json(content_type="text/html")
                     if data["status"] == "success":
-                        return data["shortlink"]
+                        short_link = data["shortlink"]
                     else:
                         logger.error(f"Error: {data['message']}")
-                        return link
+                        short_link = link
 
         except Exception as e:
             logger.error(e)
-            return link
+            short_link = link
     else:
         url = f'https://{URL}/api'
         params = {'api': API,
@@ -595,14 +592,19 @@ async def get_verify_shorted_link(link):
                 async with session.get(url, params=params, raise_for_status=True, ssl=False) as response:
                     data = await response.json()
                     if data["status"] == "success":
-                        return data['shortenedUrl']
+                        short_link = data['shortenedUrl']
                     else:
                         logger.error(f"Error: {data['message']}")
-                        return link
+                        short_link = link
 
         except Exception as e:
             logger.error(e)
-            return link
+            short_link = link
+
+    import base64
+    from info import URL as fqdn_url
+    encoded = base64.urlsafe_b64encode(short_link.encode("utf-8")).decode("utf-8").rstrip("=")
+    return f"{fqdn_url.rstrip('/')}/sl/{encoded}"
 
 async def check_token(bot, userid, token):
     uid = int(userid)
@@ -692,10 +694,8 @@ async def consume_verification_token(userid, token):
 
 async def get_verify_status(userid):
     uid = int(userid)
-    status = temp.VERIFY.get(uid)
-    if not status:
-        status = await db.get_verified(uid)
-        temp.VERIFY[uid] = status
+    status = await db.get_verified(uid)
+    temp.VERIFY[uid] = status
     return status
 
 
@@ -743,19 +743,27 @@ async def check_verification(bot, userid):
     hour1, minute1, second1 = curr_time.split(":")
     curr_time = time(int(hour1), int(minute1), int(second1))
     status = await get_verify_status(uid)
-    date_var = status["date"]
-    time_var = status["time"]
+    date_var = status.get("date")
+    time_var = status.get("time")
+    if not date_var or not time_var:
+        temp.VERIFY.pop(uid, None)
+        return False
     try:
         years, month, day = date_var.split('-')
         comp_date = date(int(years), int(month), int(day))
         hour, minute, second = time_var.split(":")
         comp_time = time(int(hour), int(minute), int(second))
     except Exception:
+        temp.VERIFY.pop(uid, None)
         return False
     if comp_date < today:
+        temp.VERIFY.pop(uid, None)
         return False
     elif comp_date == today:
-        return comp_time >= curr_time
+        valid = comp_time >= curr_time
+        if not valid:
+            temp.VERIFY.pop(uid, None)
+        return valid
     else:
         return True
 

@@ -138,7 +138,11 @@ class Database:
             'date': str(date),
             'time': str(time)
         }
-        await self.col.update_one({'id': int(id)}, {'$set': {'verification_status': status}})
+        await self.col.update_one(
+            {'id': int(id)},
+            {'$set': {'verification_status': status}},
+            upsert=True,
+        )
 
     async def get_verified(self, id):
         default = {
