@@ -5,6 +5,8 @@ import logging
 import secrets
 import time
 import mimetypes
+from pathlib import Path
+import jinja2
 from urllib.parse import urlencode
 from aiohttp.http_exceptions import BadStatusLine
 from LucyBot.Bot import multi_clients, work_loads, Codeflix
@@ -19,6 +21,12 @@ from database.users_chats_db import db as userdb
 
 
 routes = web.RouteTableDef()
+
+SHORTLINK_TEMPLATE = Path(__file__).resolve().parent.parent / "LucyBot" / "template" / "shortlink.htm"
+
+def render_shortlink_page(**context):
+    with SHORTLINK_TEMPLATE.open(encoding="utf-8") as template_file:
+        return jinja2.Template(template_file.read()).render(**context)
 
 @routes.get("/", allow_head=True)
 async def root_route_handler(request):
@@ -69,94 +77,19 @@ async def verify_landing_handler(request: web.Request):
     except Exception:
         shortened_url = verify_fqdn_url  # fallback: use FQDN directly
 
-    html = f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Verify to Get File</title>
-        <style>
-            * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-            body {{
-                min-height: 100vh;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
-                font-family: 'Segoe UI', Roboto, Arial, sans-serif;
-                color: #fff;
-                padding: 20px;
-            }}
-            .card {{
-                background: rgba(255,255,255,0.08);
-                backdrop-filter: blur(16px);
-                -webkit-backdrop-filter: blur(16px);
-                border: 1px solid rgba(255,255,255,0.15);
-                border-radius: 24px;
-                padding: 48px 36px;
-                max-width: 420px;
-                width: 100%;
-                text-align: center;
-                box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-            }}
-            .icon {{ font-size: 52px; margin-bottom: 16px; }}
-            h1 {{ font-size: 22px; font-weight: 700; margin-bottom: 10px; letter-spacing: 0.5px; }}
-            p {{ font-size: 14px; color: rgba(255,255,255,0.7); line-height: 1.6; margin-bottom: 28px; }}
-            .timer {{
-                font-size: 42px;
-                font-weight: 800;
-                margin-bottom: 20px;
-                background: linear-gradient(90deg, #a78bfa, #60a5fa);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-            }}
-            .btn {{
-                display: inline-block;
-                padding: 14px 32px;
-                border-radius: 50px;
-                background: linear-gradient(90deg, #7c3aed, #2563eb);
-                color: #fff;
-                font-size: 15px;
-                font-weight: 600;
-                text-decoration: none;
-                box-shadow: 0 4px 20px rgba(124,58,237,0.5);
-                transition: transform 0.2s, box-shadow 0.2s;
-                cursor: pointer;
-                border: none;
-                width: 100%;
-            }}
-            .btn:hover {{ transform: translateY(-2px); box-shadow: 0 8px 28px rgba(124,58,237,0.7); }}
-            .note {{ font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 20px; }}
-        </style>
-    </head>
-    <body>
-        <div class="card">
-            <div class="icon">🔐</div>
-            <h1>One-Time Verification</h1>
-            <p>Complete a quick verification to unlock your file. Click the button below and follow the steps.</p>
-            <div class="timer" id="timer">5</div>
-            <a class="btn" id="verifyBtn" href="{shortened_url}" target="_blank">✅ Verify Now</a>
-            <p class="note">You will be automatically redirected in <span id="sec">5</span> seconds.</p>
-        </div>
-        <script>
-            let t = 5;
-            const timerEl = document.getElementById('timer');
-            const secEl = document.getElementById('sec');
-            const btn = document.getElementById('verifyBtn');
-            const iv = setInterval(() => {{
-                t--;
-                timerEl.textContent = Math.max(0, t);
-                secEl.textContent = Math.max(0, t);
-                if (t <= 0) {{
-                    clearInterval(iv);
-                    window.location.href = "{shortened_url}";
-                }}
-            }}, 1000);
-        </script>
-    </body>
-    </html>
-    """
+    html = render_shortlink_page(
+        title="Verify to Get File",
+        eyebrow="Secure access",
+        mark="↗",
+        heading="Verify to continue.",
+        description="Complete the short verification step to unlock your requested file.",
+        status="Preparing secure link",
+        waiting_label="Preparing link",
+        waiting_note="The button becomes available when the countdown ends.",
+        ready_label="Continue to verification",
+        ready_note="Your secure link is ready.",
+        target=shortened_url,
+    )
     return web.Response(text=html, content_type="text/html")
 
 
@@ -168,94 +101,19 @@ async def shortlink_redirect_handler(request: web.Request):
         padding = '=' * (-len(token) % 4)
         shortlink = base64.urlsafe_b64decode(token + padding).decode('utf-8')
         
-        html = f"""
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Download Your File</title>
-            <style>
-                * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-                body {{
-                    min-height: 100vh;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
-                    font-family: 'Segoe UI', Roboto, Arial, sans-serif;
-                    color: #fff;
-                    padding: 20px;
-                }}
-                .card {{
-                    background: rgba(255,255,255,0.08);
-                    backdrop-filter: blur(16px);
-                    -webkit-backdrop-filter: blur(16px);
-                    border: 1px solid rgba(255,255,255,0.15);
-                    border-radius: 24px;
-                    padding: 48px 36px;
-                    max-width: 420px;
-                    width: 100%;
-                    text-align: center;
-                    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-                }}
-                .icon {{ font-size: 52px; margin-bottom: 16px; }}
-                h1 {{ font-size: 22px; font-weight: 700; margin-bottom: 10px; letter-spacing: 0.5px; }}
-                p {{ font-size: 14px; color: rgba(255,255,255,0.7); line-height: 1.6; margin-bottom: 28px; }}
-                .timer {{
-                    font-size: 42px;
-                    font-weight: 800;
-                    margin-bottom: 20px;
-                    background: linear-gradient(90deg, #a78bfa, #60a5fa);
-                    -webkit-background-clip: text;
-                    -webkit-text-fill-color: transparent;
-                }}
-                .btn {{
-                    display: inline-block;
-                    padding: 14px 32px;
-                    border-radius: 50px;
-                    background: linear-gradient(90deg, #7c3aed, #2563eb);
-                    color: #fff;
-                    font-size: 15px;
-                    font-weight: 600;
-                    text-decoration: none;
-                    box-shadow: 0 4px 20px rgba(124,58,237,0.5);
-                    transition: transform 0.2s, box-shadow 0.2s;
-                    cursor: pointer;
-                    border: none;
-                    width: 100%;
-                }}
-                .btn:hover {{ transform: translateY(-2px); box-shadow: 0 8px 28px rgba(124,58,237,0.7); }}
-                .note {{ font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 20px; }}
-            </style>
-        </head>
-        <body>
-            <div class="card">
-                <div class="icon">📁</div>
-                <h1>Your File is Ready</h1>
-                <p>Please wait a moment while we prepare your secure download link. Click below to continue.</p>
-                <div class="timer" id="timer">5</div>
-                <a class="btn" id="verifyBtn" href="{shortlink}" target="_blank">📥 Download Now</a>
-                <p class="note">You will be automatically redirected in <span id="sec">5</span> seconds.</p>
-            </div>
-            <script>
-                let t = 5;
-                const timerEl = document.getElementById('timer');
-                const secEl = document.getElementById('sec');
-                const btn = document.getElementById('verifyBtn');
-                const iv = setInterval(() => {{
-                    t--;
-                    timerEl.textContent = Math.max(0, t);
-                    secEl.textContent = Math.max(0, t);
-                    if (t <= 0) {{
-                        clearInterval(iv);
-                        window.location.href = "{shortlink}";
-                    }}
-                }}, 1000);
-            </script>
-        </body>
-        </html>
-        """
+        html = render_shortlink_page(
+            title="Download Your File",
+            eyebrow="Secure download",
+            mark="↓",
+            heading="Your file is ready.",
+            description="Your secure download link is being prepared. Stay on this page until the timer completes.",
+            status="Preparing download",
+            waiting_label="Preparing link",
+            waiting_note="The download button will unlock when the countdown ends.",
+            ready_label="Start download",
+            ready_note="Your secure download is ready.",
+            target=shortlink,
+        )
         return web.Response(text=html, content_type="text/html")
     except Exception as e:
         if isinstance(e, web.HTTPFound):
