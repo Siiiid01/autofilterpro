@@ -180,7 +180,11 @@ async def start(client, message):
         len(message.command) == 2
         and message.command[1].startswith("verify-")
     )
-    if not is_verification_link and not await db.has_premium_access(message.from_user.id):
+    if (
+        not is_verification_link
+        and not await db.has_premium_access(message.from_user.id)
+        and not message.command[1].startswith(("file_", "filep_", "files_", "allfiles_", "sendfiles"))
+    ):
         channels = (await get_settings(int(message.from_user.id))).get('fsub')
         if channels:  
             btn = await is_subscribed(client, message, channels)
