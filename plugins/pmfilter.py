@@ -1089,10 +1089,16 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     show_alert=True
                 )
 
-            await query.answer()
+            if not has_access and VERIFY:
+                temp.SHORT[clicked] = query.message.chat.id
+                await query.answer(
+                    url=f"https://t.me/{temp.U_NAME}?start=file_{file_id}"
+                )
+                return
 
             if settings.get('is_shortlink') and not has_access:
                 temp.SHORT[clicked] = query.message.chat.id
+                await query.answer()
                 short_url = await get_shortlink(
                     query.message.chat.id,
                     f"https://telegram.me/{temp.U_NAME}?start=file_{file_id}"
@@ -1106,26 +1112,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     ),
                     reply_markup=InlineKeyboardMarkup([[
                         InlineKeyboardButton("📁 ᴅᴏᴡɴʟᴏᴀᴅ", url=short_url)
-                    ]])
-                )
-                return
-
-            if not has_access and VERIFY:
-                verification_url = await get_token(
-                    client,
-                    clicked,
-                    f"https://telegram.me/{temp.U_NAME}?start=",
-                    file_id
-                )
-                await client.send_photo(
-                    chat_id=clicked,
-                    photo=random.choice(PICS),
-                    caption=(
-                        f"<b>‼️ You are not verified today.</b>\n\n"
-                        f"Verify once to get access for {VERIFY_EXPIRE} hours."
-                    ),
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ᴠᴇʀɪғʏ", url=verification_url)
                     ]])
                 )
                 return
