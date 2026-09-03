@@ -1069,6 +1069,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         size = get_size(files.file_size)
         f_caption = files.caption
         pre_user = await db.has_premium_access(clicked)
+        has_access = pre_user or await check_verification(client, clicked)
         settings = await get_settings(query.message.chat.id)
         if CUSTOM_FILE_CAPTION:
             try:
@@ -1090,7 +1091,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
             await query.answer()
 
-            if settings.get('is_shortlink') and not pre_user:
+            if settings.get('is_shortlink') and not has_access:
                 temp.SHORT[clicked] = query.message.chat.id
                 short_url = await get_shortlink(
                     query.message.chat.id,
@@ -1109,16 +1110,20 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 )
                 return
 
-            if not pre_user and VERIFY and not await check_verification(client, clicked):
+            if not has_access and VERIFY:
                 verification_url = await get_token(
                     client,
                     clicked,
                     f"https://telegram.me/{temp.U_NAME}?start=",
                     file_id
                 )
-                await client.send_message(
+                await client.send_photo(
                     chat_id=clicked,
-                    text="‼️ ʏᴏᴜ ᴀʀᴇ ɴᴏᴛ ᴠᴇʀɪꜰɪᴇᴅ. ᴘʟᴇᴀsᴇ ᴠᴇʀɪꜰʏ ᴛᴏ ɢᴇᴛ ᴛʜɪs ғɪʟᴇ.",
+                    photo=random.choice(PICS),
+                    caption=(
+                        f"<b>‼️ You are not verified today.</b>\n\n"
+                        f"Verify once to get access for {VERIFY_EXPIRE} hours."
+                    ),
                     reply_markup=InlineKeyboardMarkup([[
                         InlineKeyboardButton("ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ᴠᴇʀɪғʏ", url=verification_url)
                     ]])
@@ -1143,9 +1148,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
         clicked = query.from_user.id
         ident, key = query.data.split("#")
         pre_user = await db.has_premium_access(clicked)
+        has_access = pre_user or await check_verification(client, clicked)
         settings = await get_settings(query.message.chat.id)
         try:
-            if settings.get('is_shortlink') and not pre_user:
+            if settings.get('is_shortlink') and not has_access:
                 await query.answer(url=f"https://telegram.me/{temp.U_NAME}?start=sendfiles1_{key}")
                 return
             else:
