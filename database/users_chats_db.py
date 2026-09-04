@@ -37,6 +37,7 @@ class Database:
         self.botcol = self.db[f"{COLLECTION_NAME}_deendayal"]  
         self.bot_id_col = self.db[f"{COLLECTION_NAME}_bot_id"]
         self.verify_tokens = self.db[f"{COLLECTION_NAME}_verify_tokens"]  # Persistent verification tokens
+        self.channel_links = self.db[f"{COLLECTION_NAME}_channel_links"]  # Persistent generated links
 
     async def find_join_req(self, id):
         return bool(await self.req.find_one({'id': id})) 
@@ -129,6 +130,30 @@ class Database:
         # Clean up expired tokens
         await self.verify_tokens.delete_many({'expires_at': {'$lte': now}})
         return result
+
+    async def save_channel_link(self, token: str, data: dict):
+        """Persist a generated channel link so it survives bot restarts."""
+        await self.channel_links.replace_one(
+            {'_id': token},
+            {
+                '_id': token,
+                'kind': data['kind'],
+                'chat_id': int(data['chat_id']),
+                'message_ids': [int(message_id) for message_id in data['message_ids']],
+            },
+            upsert=True,
+        )
+
+    async def get_channel_link(self, token: str):
+        """Load a generated channel link by its opaque token."""
+        doc = await self.channel_links.find_one({'_id': token})
+        if not doc:
+            return None
+        return {
+            'kind': doc['kind'],
+            'chat_id': int(doc['chat_id']),
+            'message_ids': [int(message_id) for message_id in doc['message_ids']],
+        }
 
     # ============================
     # Verification Status

@@ -1,6 +1,6 @@
-import base64
 import logging
 import re
+import secrets
 
 from pyrogram import Client, enums, filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -11,6 +11,7 @@ from pyrogram.errors.exceptions.bad_request_400 import (
 )
 
 from info import CHANNELS, OWNERID
+from database.users_chats_db import db
 from utils import temp
 
 
@@ -28,8 +29,8 @@ async def owner_only(_, __, message):
     return allowed
 
 
-def encode_payload(payload):
-    return base64.urlsafe_b64encode(payload.encode("ascii")).decode().rstrip("=")
+def create_token():
+    return secrets.token_urlsafe(8)
 
 
 def source_message(message):
@@ -59,8 +60,9 @@ async def gen_link(bot, message):
             "<blockquote>ꜰᴏʀᴡᴀʀᴅ ᴍᴇssᴀɢᴇ ꜰʀᴏᴍ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ (ᴡɪᴛʜ ǫᴜᴏᴛᴇs)..</blockquote>"
         )
         try:
-            replied = await bot.listen(
+            replied = await bot.ask(
                 chat_id=message.chat.id,
+                text="Forward the original DB channel post in the next 60 seconds.",
                 filters=filters.forwarded,
                 timeout=60,
             )
@@ -78,12 +80,21 @@ async def gen_link(bot, message):
             "This message is not from a configured database channel. Forward the original channel post and try again."
         )
 
-    payload = encode_payload(f"CF-{chat_id}-{message_id}")
+    token = create_token()
+    try:
+        await db.save_channel_link(token, {
+            "kind": "CF",
+            "chat_id": chat_id,
+            "message_ids": [message_id],
+        })
+    except Exception:
+        logger.exception("GENLINK_TOKEN_SAVE_FAILED owner_id=%s chat_id=%s message_id=%s", message.from_user.id, chat_id, message_id)
+        return await message.reply("I could not save this link right now. Please try again.")
     logger.info(
         "GENLINK_CREATED owner_id=%s source_chat_id=%s source_message_id=%s",
         message.from_user.id, chat_id, message_id,
     )
-    link = f"https://t.me/{temp.U_NAME}?start={payload}"
+    link = f"https://t.me/{temp.U_NAME}?start=CL-{token}"
     return await message.reply(
         f"<blockquote>✓ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ</blockquote>\n\n<code>{link}</code>",
         parse_mode=enums.ParseMode.HTML,
@@ -95,27 +106,46 @@ async def gen_link(bot, message):
 
 @Client.on_message(filters.command(["batch"]) & filters.create(owner_only))
 async def gen_link_batch(bot, message):
-    parts = message.text.strip().split()
-    if len(parts) != 3:
+    if len(message.command) != 1:
         return await message.reply(
-            "Use:\n<code>/batch https://t.me/c/CHANNEL_ID/FIRST https://t.me/c/CHANNEL_ID/LAST</code>"
+            "<blockquote>ꜰᴏʀᴡᴀʀᴅ ᴛʜᴇ ꜰɪʀsᴛ ᴍᴇssᴀɢᴇ ꜰʀᴏᴍ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ (ᴡɪᴛʜ ǫᴜᴏᴛᴇs)..</blockquote>"
         )
 
-    _, first, last = parts
-    link_pattern = re.compile(
-        r"^(?:https://)?(?:t\.me|telegram\.me|telegram\.dog)/(?:c/)?(-?\d+|[A-Za-z0-9_]+)/([0-9]+)$"
-    )
-    first_match = link_pattern.match(first)
-    last_match = link_pattern.match(last)
-    if not first_match or not last_match:
-        return await message.reply("Invalid Telegram message link.")
+    try:
+        first = await bot.ask(
+            chat_id=message.chat.id,
+            text="<blockquote>ꜰᴏʀᴡᴀʀᴅ ᴛʜᴇ ꜰɪʀsᴛ ᴍᴇssᴀɢᴇ ꜰʀᴏᴍ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ (ᴡɪᴛʜ ǫᴜᴏᴛᴇs)..</blockquote>",
+            filters=filters.forwarded,
+            timeout=60,
+        )
+    except Exception:
+        logger.exception("GENBATCH_FIRST_MESSAGE_TIMEOUT owner_id=%s", message.from_user.id)
+        return await message.reply("Timed out. Please run /batch and forward the first DB post again.")
 
-    first_chat, first_id = first_match.group(1), int(first_match.group(2))
-    last_chat, last_id = last_match.group(1), int(last_match.group(2))
+    first_chat, first_id = source_message(first)
+    if not first_chat or not first_id or not is_database_channel(first_chat):
+        logger.warning("GENBATCH_INVALID_FIRST_SOURCE owner_id=%s chat_id=%s message_id=%s", message.from_user.id, first_chat, first_id)
+        return await message.reply("That is not a message from a configured database channel.")
+
+    try:
+        last = await bot.ask(
+            chat_id=message.chat.id,
+            text="<blockquote>ꜰᴏʀᴡᴀʀᴅ ᴛʜᴇ ʟᴀsᴛ ᴍᴇssᴀɢᴇ ꜰʀᴏᴍ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ (ᴡɪᴛʜ ǫᴜᴏᴛᴇs)..</blockquote>",
+            filters=filters.forwarded,
+            timeout=60,
+        )
+    except Exception:
+        logger.exception("GENBATCH_LAST_MESSAGE_TIMEOUT owner_id=%s", message.from_user.id)
+        return await message.reply("Timed out. Please run /batch and forward both DB posts again.")
+
+    last_chat, last_id = source_message(last)
+    if not last_chat or not last_id or not is_database_channel(last_chat):
+        logger.warning("GENBATCH_INVALID_LAST_SOURCE owner_id=%s chat_id=%s message_id=%s", message.from_user.id, last_chat, last_id)
+        return await message.reply("That is not a message from a configured database channel.")
     if first_chat != last_chat:
-        return await message.reply("Both links must belong to the same database channel.")
+        return await message.reply("Both forwarded messages must be from the same database channel.")
 
-    chat_id = int(f"-100{first_chat}") if first_chat.isdigit() else first_chat
+    chat_id = first_chat
     try:
         resolved_chat = (await bot.get_chat(chat_id)).id
     except ChannelInvalid:
@@ -136,12 +166,21 @@ async def gen_link_batch(bot, message):
         return await message.reply("That channel is not configured as a database channel.")
 
     start_id, end_id = sorted((first_id, last_id))
-    payload = encode_payload(f"CB-{resolved_chat}-{start_id}-{end_id}")
+    token = create_token()
+    try:
+        await db.save_channel_link(token, {
+            "kind": "CB",
+            "chat_id": resolved_chat,
+            "message_ids": range(start_id, end_id + 1),
+        })
+    except Exception:
+        logger.exception("GENBATCH_TOKEN_SAVE_FAILED owner_id=%s chat_id=%s first_id=%s last_id=%s", message.from_user.id, resolved_chat, start_id, end_id)
+        return await message.reply("I could not save this batch link right now. Please try again.")
     logger.info(
         "GENBATCH_CREATED owner_id=%s source_chat_id=%s first_id=%s last_id=%s",
         message.from_user.id, resolved_chat, start_id, end_id,
     )
-    link = f"https://t.me/{temp.U_NAME}?start={payload}"
+    link = f"https://t.me/{temp.U_NAME}?start=CL-{token}"
     return await message.reply(
         f"<blockquote>✓ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʙᴀᴛᴄʜ ʟɪɴᴋ</blockquote>\n\n"
         f"<b>ᴍᴇssᴀɢᴇs:</b> <code>{start_id} - {end_id}</code>\n\n<code>{link}</code>",
