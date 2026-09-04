@@ -87,6 +87,68 @@ async def _send_verification_confirmation(message, expiry_line):
         except Exception:
             logger.exception("Could not send verification confirmation for user_id=%s", message.from_user.id)
 
+async def _deliver_channel_link(client, message, data):
+    try:
+        parts = data.split("-")
+        kind = parts[0]
+        if kind == "CF" and len(parts) == 3:
+            chat_id, message_id = int(parts[1]), int(parts[2])
+            message_ids = [message_id]
+        elif kind == "CB" and len(parts) == 4:
+            chat_id, first_id, last_id = map(int, parts[1:])
+            if last_id - first_id > 200:
+                await message.reply_text("This batch is too large. Please keep a batch within 200 messages.")
+                return
+            message_ids = list(range(first_id, last_id + 1))
+        else:
+            logger.error("CHANNEL_LINK_INVALID_PAYLOAD user_id=%s data=%s", message.from_user.id, data)
+            await message.reply_text("This file link is invalid or expired.")
+            return
+
+        if not any(str(channel_id) == str(chat_id) for channel_id in CHANNELS):
+            logger.error("CHANNEL_LINK_UNCONFIGURED user_id=%s chat_id=%s channels=%s", message.from_user.id, chat_id, CHANNELS)
+            await message.reply_text("This file link points to an unconfigured database channel.")
+            return
+
+        logger.info(
+            "CHANNEL_LINK_FETCH_START user_id=%s chat_id=%s message_count=%s first_id=%s last_id=%s",
+            message.from_user.id, chat_id, len(message_ids), message_ids[0], message_ids[-1],
+        )
+        fetched = await client.get_messages(chat_id=chat_id, message_ids=message_ids)
+        fetched = fetched if isinstance(fetched, list) else [fetched]
+        fetched = [item for item in fetched if item and not item.empty]
+        if not fetched:
+            logger.error("CHANNEL_LINK_FETCH_EMPTY user_id=%s chat_id=%s message_ids=%s", message.from_user.id, chat_id, message_ids)
+            await message.reply_text("No files were found in this database channel range.")
+            return
+
+        sent_messages = []
+        for source in fetched:
+            try:
+                sent_messages.append(await source.copy(chat_id=message.from_user.id, protect_content=False))
+                logger.info("CHANNEL_LINK_SENT user_id=%s source_message_id=%s", message.from_user.id, source.id)
+            except FloodWait as error:
+                await asyncio.sleep(getattr(error, "value", getattr(error, "x", 1)))
+                sent_messages.append(await source.copy(chat_id=message.from_user.id, protect_content=False))
+            except Exception:
+                logger.exception("CHANNEL_LINK_SEND_FAILED user_id=%s source_message_id=%s", message.from_user.id, source.id)
+
+        if not sent_messages:
+            await message.reply_text("The files could not be sent. Please try the link again.")
+            return
+
+        warning = await message.reply_text(
+            f"<b>›› {len(sent_messages)} ғɪʟᴇ(s) ᴅᴇʟɪᴠᴇʀᴇᴅ ✅</b>\n\n"
+            f"<b>ᴛʜᴇsᴇ ғɪʟᴇs ᴡɪʟʟ ʙᴇ ᴅᴇʟᴇᴛᴇᴅ ɪɴ <code>{get_time(DELETE_TIME)}</code> 🫥</b>\n\n"
+            "<b><i>ᴘʟᴇᴀsᴇ ғᴏʀᴡᴀʀᴅ ᴛʜᴇsᴇ ғɪʟᴇs ᴛᴏ sᴏᴍᴇᴡʜᴇʀᴇ ᴇʟsᴇ</i></b>",
+            parse_mode=enums.ParseMode.HTML,
+        )
+        asyncio.create_task(_delete_after(DELETE_TIME, *sent_messages, warning))
+        logger.info("CHANNEL_LINK_FETCH_COMPLETE user_id=%s sent=%s", message.from_user.id, len(sent_messages))
+    except Exception:
+        logger.exception("CHANNEL_LINK_DELIVERY_FAILED user_id=%s data=%s", message.from_user.id, data)
+        await message.reply_text("Something went wrong while fetching these files. Please try again.")
+
 @Client.on_message(filters.command("verify") & filters.incoming)
 async def verify_command(client, message):
     user_id = message.from_user.id
@@ -174,10 +236,10 @@ async def start(client, message):
 
     data = message.command[1]
     fileid = None
-    if not data.startswith(("file_", "filep_", "files_", "allfiles", "sendfiles", "BATCH-", "DSTORE-", "verify-")):
+    if not data.startswith(("file_", "filep_", "files_", "allfiles", "sendfiles", "BATCH-", "DSTORE-", "CF-", "CB-", "verify-")):
         try:
             decoded_data = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("ascii")
-            if decoded_data.startswith(("file_", "filep_")):
+            if decoded_data.startswith(("file_", "filep_", "CF-", "CB-")):
                 data = decoded_data
         except (ValueError, UnicodeDecodeError):
             pass
@@ -193,7 +255,7 @@ async def start(client, message):
     if (
         not is_verification_link
         and not await db.has_premium_access(message.from_user.id)
-        and not data.startswith(("file_", "filep_", "files_", "allfiles", "sendfiles", "BATCH-", "DSTORE-"))
+        and not data.startswith(("file_", "filep_", "files_", "allfiles", "sendfiles", "BATCH-", "DSTORE-", "CF-", "CB-"))
     ):
         channels = (await get_settings(int(message.from_user.id))).get('fsub')
         if channels:  
@@ -298,6 +360,10 @@ async def start(client, message):
         movie = movies.replace('-',' ')
         message.text = movie 
         await auto_filter(client, message) 
+        return
+
+    if data.startswith(("CF-", "CB-")):
+        await _deliver_channel_link(client, message, data)
         return
     
     try:

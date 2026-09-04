@@ -1,193 +1,152 @@
-import re
-from pyrogram import filters, Client, enums
-from pyrogram.errors.exceptions.bad_request_400 import ChannelInvalid, UsernameInvalid, UsernameNotModified
-from info import ADMINS, LOG_CHANNEL, FILE_STORE_CHANNEL, PUBLIC_FILE_STORE
-from database.ia_filterdb import unpack_new_file_id, save_file
-from utils import temp
-import re
-import os
-import json
 import base64
 import logging
+import re
+
+from pyrogram import Client, enums, filters
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.errors.exceptions.bad_request_400 import (
+    ChannelInvalid,
+    UsernameInvalid,
+    UsernameNotModified,
+)
+
+from info import CHANNELS, OWNERID
+from utils import temp
+
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
-async def allowed(_, __, message):
-    if PUBLIC_FILE_STORE:
-        return True
-    if message.from_user and message.from_user.id in ADMINS:
-        return True
-    return False
 
-@Client.on_message(filters.command(['link', 'plink']) & filters.create(allowed))
-async def gen_link_s(bot, message):
+async def owner_only(_, __, message):
+    allowed = bool(message.from_user and message.from_user.id == OWNERID)
+    if not allowed:
+        logger.warning(
+            "GENLINK_UNAUTHORIZED command=%s user_id=%s",
+            getattr(message, "command", ["unknown"])[0],
+            getattr(getattr(message, "from_user", None), "id", None),
+        )
+    return allowed
+
+
+def encode_payload(payload):
+    return base64.urlsafe_b64encode(payload.encode("ascii")).decode().rstrip("=")
+
+
+def source_message(message):
+    """Return the original channel and message IDs from a forwarded post."""
+    forwarded_chat = getattr(message, "forward_from_chat", None)
+    forwarded_id = getattr(message, "forward_from_message_id", None)
+    if forwarded_chat and forwarded_id:
+        return forwarded_chat.id, forwarded_id
+
+    forward_origin = getattr(message, "forward_origin", None)
+    origin_chat = getattr(forward_origin, "chat", None)
+    origin_id = getattr(forward_origin, "message_id", None)
+    if origin_chat and origin_id:
+        return origin_chat.id, origin_id
+    return None, None
+
+
+def is_database_channel(chat_id):
+    return any(str(channel_id) == str(chat_id) for channel_id in CHANNELS)
+
+
+@Client.on_message(filters.command(["link"]) & filters.create(owner_only))
+async def gen_link(bot, message):
     replied = message.reply_to_message
     if not replied:
-        return await message.reply('Reply to a message to get a shareable link.')
-    file_type = replied.media
-    if file_type not in [enums.MessageMediaType.VIDEO, enums.MessageMediaType.AUDIO, enums.MessageMediaType.DOCUMENT, enums.MessageMediaType.PHOTO]:
-        if file_type is None:
-            # It's a text message
-            is_plink = message.command[0].lower() == "plink"
-            post = await replied.copy(LOG_CHANNEL)
-            cmd_type = "/pbatch" if is_plink else "/batch"
-            string = f"{post.id}_{post.id}_{LOG_CHANNEL}_{cmd_type}"
-            b_64 = base64.urlsafe_b64encode(string.encode("ascii")).decode().strip("=")
-            return await message.reply(
-                f"Here is your Link:\nhttps://t.me/{temp.U_NAME}?start=DSTORE-{b_64}",
-                parse_mode=enums.ParseMode.HTML
-            )
-        elif message.from_user and message.from_user.id in ADMINS:
-            is_plink = message.command[0].lower() == "plink"
-            post = await replied.copy(LOG_CHANNEL)
-            cmd_type = "/pbatch" if is_plink else "/batch"
-            string = f"{post.id}_{post.id}_{LOG_CHANNEL}_{cmd_type}"
-            b_64 = base64.urlsafe_b64encode(string.encode("ascii")).decode().strip("=")
-            return await message.reply(
-                f"Here is your Link (Special Admin Mode):\nhttps://t.me/{temp.U_NAME}?start=DSTORE-{b_64}",
-                parse_mode=enums.ParseMode.HTML
-            )
-        else:
-            return await message.reply("Reply to a supported media")
-            
-    if message.has_protected_content and message.chat.id not in ADMINS:
-        return await message.reply("okDa")
-
-    is_plink = message.command[0].lower() == "plink"
-    media = getattr(replied, file_type.value)
-    file_id, ref = unpack_new_file_id(media.file_id)
-    string = 'filep_' if is_plink else 'file_'
-    string += file_id
-    outstr = base64.urlsafe_b64encode(string.encode("ascii")).decode().strip("=")
-
-    if is_plink:
-        # Save file permanently to MongoDB so the link survives bot restarts
-        media.file_type = file_type.value
-        media.caption = replied.caption
-        saved, status = await save_file(bot, media)
-        if saved:
-            db_note = "\n\n✅ <b>File saved to database</b> — link is permanent."
-        elif status == 0:
-            db_note = "\n\n♻️ <b>File already in database</b> — link is permanent."
-        else:
-            db_note = "\n\n⚠️ <b>Could not save to database</b> — link may expire."
-    else:
-        db_note = ""
-
-    await message.reply(
-        f"Here is your Link:\nhttps://t.me/{temp.U_NAME}?start={outstr}{db_note}",
-        parse_mode=enums.ParseMode.HTML
-    )
-    
-    
-@Client.on_message(filters.command(['batch', 'pbatch']) & filters.create(allowed))
-async def gen_link_batch(bot, message):
-    if " " not in message.text:
-        return await message.reply("Use correct format.\nExample <code>/batch https://t.me/WilsonVerse/10 https://t.me/WilsonVerse/20</code>.")
-    links = message.text.strip().split(" ")
-    if len(links) != 3:
-        return await message.reply("Use correct format.\nExample <code>/batch https://t.me/WilsonVerse/10 https://t.me/WilsonVerse/20</code>.")
-    cmd, first, last = links
-    regex = re.compile(r"(https://)?(t\.me/|telegram\.me/|telegram\.dog/)(c/)?(\d+|[a-zA-Z_0-9]+)/(\d+)$")
-    match = regex.match(first)
-    if not match:
-        return await message.reply('Invalid link')
-    f_chat_id = match.group(4)
-    f_msg_id = int(match.group(5))
-    if f_chat_id.isnumeric():
-        f_chat_id  = int(("-100" + f_chat_id))
-
-    match = regex.match(last)
-    if not match:
-        return await message.reply('Invalid link')
-    l_chat_id = match.group(4)
-    l_msg_id = int(match.group(5))
-    if l_chat_id.isnumeric():
-        l_chat_id  = int(("-100" + l_chat_id))
-
-    if f_chat_id != l_chat_id:
-        return await message.reply("Chat ids not matched.")
-    try:
-        chat_id = (await bot.get_chat(f_chat_id)).id
-    except ChannelInvalid:
-        return await message.reply('This may be a private channel / group. Make me an admin over there to index the files.')
-    except (UsernameInvalid, UsernameNotModified):
-        return await message.reply('Invalid Link specified.')
-    except Exception as e:
-        return await message.reply(f'Errors - {e}')
-
-    is_pbatch = cmd.lower().strip() in ["/pbatch", "pbatch"]
-
-    sts = await message.reply("Generating link for your message.\nThis may take time depending upon number of messages")
-
-    # DSTORE fast-path: only for /batch (not /pbatch — pbatch always saves to DB)
-    if chat_id in FILE_STORE_CHANNEL and not is_pbatch:
-        string = f"{f_msg_id}_{l_msg_id}_{chat_id}_{cmd.lower().strip()}"
-        b_64 = base64.urlsafe_b64encode(string.encode("ascii")).decode().strip("=")
-        return await sts.edit(f"Here is your link https://t.me/{temp.U_NAME}?start=DSTORE-{b_64}")
-
-    FRMT = "Generating Link...\nTotal Messages: `{total}`\nDone: `{current}`\nRemaining: `{rem}`\nStatus: `{sts}`"
-
-    outlist = []
-    og_msg = 0
-    tot = 0
-    async for msg in bot.iter_messages(f_chat_id, l_msg_id, f_msg_id):
-        tot += 1
-        if msg.empty or msg.service:
-            continue
-        if not msg.media:
-            # only media messages supported.
-            continue
-        try:
-            file_type = msg.media
-            if file_type not in [enums.MessageMediaType.VIDEO, enums.MessageMediaType.AUDIO, enums.MessageMediaType.DOCUMENT, enums.MessageMediaType.PHOTO, enums.MessageMediaType.ANIMATION]:
-                continue
-            file = getattr(msg, file_type.value)
-            caption = getattr(msg, 'caption', '')
-            if caption:
-                caption = caption.html
-            if file:
-                if is_pbatch:
-                    # Save each file to MongoDB permanently
-                    file.file_type = file_type.value
-                    file.caption = msg.caption
-                    await save_file(bot, file)
-                    # Use the DB-unpacked file_id so resolution always goes through DB
-                    db_file_id, _ = unpack_new_file_id(file.file_id)
-                else:
-                    db_file_id = file.file_id
-
-                file_data = {
-                    "file_id": db_file_id,
-                    "caption": caption,
-                    "title": getattr(file, "file_name", ""),
-                    "size": file.file_size,
-                    "protect": is_pbatch,
-                }
-                og_msg += 1
-                outlist.append(file_data)
-        except:
-            pass
-        if og_msg and not og_msg % 20:
-            try:
-                await sts.edit(FRMT.format(total=l_msg_id-f_msg_id, current=tot, rem=((l_msg_id-f_msg_id) - tot), sts="Saving to DB..." if is_pbatch else "Saving Messages"))
-            except:
-                pass
-    
-    # Validate that at least one file was collected
-    if not outlist:
-        await sts.edit(
-            f"<b>❌ No valid files found in the message range.</b>\n\n"
-            f"Checked {tot} messages, but none contained supported media types (Video, Audio, Document, Photo, GIF).\n\n"
-            f"Make sure the messages in the range have attachments and are not forwarded or protected."
+        prompt = await message.reply(
+            "<blockquote>ꜰᴏʀᴡᴀʀᴅ ᴍᴇssᴀɢᴇ ꜰʀᴏᴍ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ (ᴡɪᴛʜ ǫᴜᴏᴛᴇs)..</blockquote>"
         )
-        return
-    
-    with open(f"batchmode_{message.from_user.id}.json", "w+") as out:
-        json.dump(outlist, out)
-    post = await bot.send_document(LOG_CHANNEL, f"batchmode_{message.from_user.id}.json", file_name="Batch.json", caption="⚠️Generated for filestore.")
-    os.remove(f"batchmode_{message.from_user.id}.json")
-    file_id, ref = unpack_new_file_id(post.document.file_id)
-    db_suffix = " (📦 files saved to DB — permanent)" if is_pbatch else ""
-    await sts.edit(f"Here is your link\nContains `{og_msg}` files.{db_suffix}\n https://t.me/{temp.U_NAME}?start=BATCH-{file_id}")
+        try:
+            replied = await bot.listen(
+                chat_id=message.chat.id,
+                filters=filters.forwarded,
+                timeout=60,
+            )
+        except Exception:
+            logger.exception("GENLINK_LISTEN_FAILED owner_id=%s", message.from_user.id)
+            return await prompt.edit("Timed out. Please run /link and forward the channel post again.")
+
+    chat_id, message_id = source_message(replied)
+    if not chat_id or not message_id or not is_database_channel(chat_id):
+        logger.warning(
+            "GENLINK_INVALID_SOURCE owner_id=%s chat_id=%s message_id=%s configured_channels=%s",
+            getattr(message.from_user, "id", None), chat_id, message_id, CHANNELS,
+        )
+        return await message.reply(
+            "This message is not from a configured database channel. Forward the original channel post and try again."
+        )
+
+    payload = encode_payload(f"CF-{chat_id}-{message_id}")
+    logger.info(
+        "GENLINK_CREATED owner_id=%s source_chat_id=%s source_message_id=%s",
+        message.from_user.id, chat_id, message_id,
+    )
+    link = f"https://t.me/{temp.U_NAME}?start={payload}"
+    return await message.reply(
+        f"<blockquote>✓ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ</blockquote>\n\n<code>{link}</code>",
+        parse_mode=enums.ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔁 sʜᴀʀᴇ ᴜʀʟ", url=f"https://telegram.me/share/url?url={link}")]
+        ]),
+    )
+
+
+@Client.on_message(filters.command(["batch"]) & filters.create(owner_only))
+async def gen_link_batch(bot, message):
+    parts = message.text.strip().split()
+    if len(parts) != 3:
+        return await message.reply(
+            "Use:\n<code>/batch https://t.me/c/CHANNEL_ID/FIRST https://t.me/c/CHANNEL_ID/LAST</code>"
+        )
+
+    _, first, last = parts
+    link_pattern = re.compile(
+        r"^(?:https://)?(?:t\.me|telegram\.me|telegram\.dog)/(?:c/)?(-?\d+|[A-Za-z0-9_]+)/([0-9]+)$"
+    )
+    first_match = link_pattern.match(first)
+    last_match = link_pattern.match(last)
+    if not first_match or not last_match:
+        return await message.reply("Invalid Telegram message link.")
+
+    first_chat, first_id = first_match.group(1), int(first_match.group(2))
+    last_chat, last_id = last_match.group(1), int(last_match.group(2))
+    if first_chat != last_chat:
+        return await message.reply("Both links must belong to the same database channel.")
+
+    chat_id = int(f"-100{first_chat}") if first_chat.isdigit() else first_chat
+    try:
+        resolved_chat = (await bot.get_chat(chat_id)).id
+    except ChannelInvalid:
+        logger.exception("GENBATCH_CHANNEL_INVALID chat_id=%s", chat_id)
+        return await message.reply("I cannot access that channel. Make sure I am an administrator there.")
+    except (UsernameInvalid, UsernameNotModified):
+        logger.exception("GENBATCH_CHANNEL_INVALID_NAME chat_id=%s", chat_id)
+        return await message.reply("Invalid database channel link.")
+    except Exception:
+        logger.exception("GENBATCH_GET_CHAT_FAILED chat_id=%s", chat_id)
+        return await message.reply("I could not access that channel right now.")
+
+    if not is_database_channel(resolved_chat):
+        logger.warning(
+            "GENBATCH_SOURCE_NOT_CONFIGURED source_chat_id=%s configured_channels=%s",
+            resolved_chat, CHANNELS,
+        )
+        return await message.reply("That channel is not configured as a database channel.")
+
+    start_id, end_id = sorted((first_id, last_id))
+    payload = encode_payload(f"CB-{resolved_chat}-{start_id}-{end_id}")
+    logger.info(
+        "GENBATCH_CREATED owner_id=%s source_chat_id=%s first_id=%s last_id=%s",
+        message.from_user.id, resolved_chat, start_id, end_id,
+    )
+    link = f"https://t.me/{temp.U_NAME}?start={payload}"
+    return await message.reply(
+        f"<blockquote>✓ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʙᴀᴛᴄʜ ʟɪɴᴋ</blockquote>\n\n"
+        f"<b>ᴍᴇssᴀɢᴇs:</b> <code>{start_id} - {end_id}</code>\n\n<code>{link}</code>",
+        parse_mode=enums.ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔁 sʜᴀʀᴇ ᴜʀʟ", url=f"https://telegram.me/share/url?url={link}")]
+        ]),
+    )
