@@ -171,6 +171,16 @@ async def start(client, message):
             parse_mode=enums.ParseMode.HTML
         )
         return
+
+    data = message.command[1]
+    fileid = None
+    if not data.startswith(("file_", "filep_", "files_", "allfiles", "sendfiles", "BATCH-", "DSTORE-", "verify-")):
+        try:
+            decoded_data = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("ascii")
+            if decoded_data.startswith(("file_", "filep_")):
+                data = decoded_data
+        except (ValueError, UnicodeDecodeError):
+            pass
     
     # A verification deep-link is issued only after the user has already reached
     # this point once. Do not run verify-... through the force-subscription
@@ -183,7 +193,7 @@ async def start(client, message):
     if (
         not is_verification_link
         and not await db.has_premium_access(message.from_user.id)
-        and not message.command[1].startswith(("file_", "filep_", "files_", "allfiles_", "sendfiles"))
+        and not data.startswith(("file_", "filep_", "files_", "allfiles", "sendfiles", "BATCH-", "DSTORE-"))
     ):
         channels = (await get_settings(int(message.from_user.id))).get('fsub')
         if channels:  
@@ -290,7 +300,6 @@ async def start(client, message):
         await auto_filter(client, message) 
         return
     
-    data = message.command[1]
     try:
         pre, file_id = data.split('_', 1)
     except:
