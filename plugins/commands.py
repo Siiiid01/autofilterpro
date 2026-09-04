@@ -143,8 +143,16 @@ async def _deliver_channel_link(client, message, data):
             message.from_user.id, chat_id, len(message_ids), message_ids[0], message_ids[-1],
         )
         fetched = await client.get_messages(chat_id=chat_id, message_ids=message_ids)
-        fetched = fetched if type(fetched) is type([]) else [fetched]
-        fetched = [item for item in fetched if item and not item.empty]
+        if fetched is None:
+            fetched_messages = []
+        elif hasattr(fetched, "empty"):
+            fetched_messages = [fetched]
+        else:
+            try:
+                fetched_messages = [item for item in fetched]
+            except TypeError:
+                fetched_messages = [fetched]
+        fetched = [item for item in fetched_messages if item and not getattr(item, "empty", False)]
         if not fetched:
             logger.error("CHANNEL_LINK_FETCH_EMPTY user_id=%s chat_id=%s message_ids=%s", message.from_user.id, chat_id, message_ids)
             await message.reply_text("No files were found in this database channel range.")
