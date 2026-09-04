@@ -398,7 +398,30 @@ async def start(client, message):
         await auto_filter(client, message) 
         return
 
-    if data.startswith(("CF-", "CB-", "CF|", "CB|", "CL-")):
+    if data.startswith("CL-"):
+        user_id = message.from_user.id
+        if await db.has_premium_access(user_id) or await check_verification(client, user_id):
+            await _deliver_channel_link(client, message, data)
+            return
+
+        try:
+            verification_url = await get_token(client, user_id, "", data)
+        except Exception:
+            logger.exception("CHANNEL_LINK_VERIFICATION_LINK_FAILED user_id=%s data=%s", user_id, data)
+            return await message.reply_text("Verification is temporarily unavailable. Please try again shortly.")
+
+        await message.reply_text(
+            "<blockquote><b>ʜᴇʏ, ʏᴏᴜʀ ғɪʟᴇ ɪs ʀᴇᴀᴅʏ ✅</b></blockquote>\n\n"
+            "ᴘʟᴇᴀsᴇ ᴄᴏᴍᴘʟᴇᴛᴇ ᴛʜᴇ sʜᴏʀᴛ ᴠᴇʀɪғɪᴄᴀᴛɪᴏɴ ᴛᴏ ᴜɴʟᴏᴄᴋ ʏᴏᴜʀ ғɪʟᴇs.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ ᴠᴇʀɪғʏ ᴀɴᴅ ɢᴇᴛ ғɪʟᴇs", url=verification_url)],
+                [InlineKeyboardButton("ʜᴏᴡ ᴛᴏ ᴠᴇʀɪғʏ", url=HOW_TO_VERIFY)],
+            ]),
+            parse_mode=enums.ParseMode.HTML,
+        )
+        return
+
+    if data.startswith(("CF-", "CB-", "CF|", "CB|")):
         await _deliver_channel_link(client, message, data)
         return
     
@@ -675,6 +698,10 @@ async def start(client, message):
                 logger.exception("Could not write verification log for user_id=%s", userid)
 
             if not fileid:
+                return
+
+            if fileid.startswith("CL-"):
+                await _deliver_channel_link(client, message, fileid)
                 return
 
             # ── Auto-deliver the file immediately — no button click needed ──
@@ -1585,7 +1612,6 @@ async def shortlink(bot, message):
         return
     data = message.text
     userid = message.from_user.id
-    user = await bot.get_chat_member(grpid, userid)
     if user.status != enums.ChatMemberStatus.ADMINISTRATOR and user.status != enums.ChatMemberStatus.OWNER and str(userid) not in ADMINS:
         return await message.reply_text("<b>ʏᴏᴜ ᴅᴏɴ'ᴛ ʜᴀᴠᴇ ᴀᴄᴄᴇꜱꜱ ᴛᴏ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ !\nᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ᴏɴʟʏ ᴡᴏʀᴋꜱ ꜰᴏʀ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴꜱ.</b>")
     else:
