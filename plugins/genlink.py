@@ -141,7 +141,7 @@ async def gen_link_batch(bot, message):
             continue
         try:
             file_type = msg.media
-            if file_type not in [enums.MessageMediaType.VIDEO, enums.MessageMediaType.AUDIO, enums.MessageMediaType.DOCUMENT]:
+            if file_type not in [enums.MessageMediaType.VIDEO, enums.MessageMediaType.AUDIO, enums.MessageMediaType.DOCUMENT, enums.MessageMediaType.PHOTO, enums.MessageMediaType.ANIMATION]:
                 continue
             file = getattr(msg, file_type.value)
             caption = getattr(msg, 'caption', '')
@@ -174,6 +174,16 @@ async def gen_link_batch(bot, message):
                 await sts.edit(FRMT.format(total=l_msg_id-f_msg_id, current=tot, rem=((l_msg_id-f_msg_id) - tot), sts="Saving to DB..." if is_pbatch else "Saving Messages"))
             except:
                 pass
+    
+    # Validate that at least one file was collected
+    if not outlist:
+        await sts.edit(
+            f"<b>❌ No valid files found in the message range.</b>\n\n"
+            f"Checked {tot} messages, but none contained supported media types (Video, Audio, Document, Photo, GIF).\n\n"
+            f"Make sure the messages in the range have attachments and are not forwarded or protected."
+        )
+        return
+    
     with open(f"batchmode_{message.from_user.id}.json", "w+") as out:
         json.dump(outlist, out)
     post = await bot.send_document(LOG_CHANNEL, f"batchmode_{message.from_user.id}.json", file_name="Batch.json", caption="⚠️Generated for filestore.")
